@@ -42,10 +42,11 @@ async function main() {
   const holders = new Map();
   for (const p of privileges) {
     const id = String(p.user);
-    if (!holders.has(id)) holders.set(id, { id, tiers: [], boost: 0, paid: 0, first: p.purchase_date, expires: p.expires_at, active: false });
+    if (!holders.has(id)) holders.set(id, { id, tiers: [], boost: 0, paid: 0, currency: p.currency || '?', first: p.purchase_date, expires: p.expires_at, active: false });
     const h = holders.get(id);
     h.tiers.push(p.tier);
     h.paid += Number(p.price_paid) || 0;
+    if (p.currency && p.currency !== h.currency) h.currency = 'mixed';
     if (new Date(p.expires_at) > now) { h.boost += Number(p.multiplier) || 0; h.active = true; }
     if (new Date(p.expires_at) > new Date(h.expires)) h.expires = p.expires_at;
     if (new Date(p.purchase_date) < new Date(h.first)) h.first = p.purchase_date;
@@ -84,7 +85,7 @@ async function main() {
     totalPaid += h.paid; totalMined += mined; totalProjected += projectedYear; totalWithdrawn += withdrawn;
 
     console.log(`  ${h.email || h.id}`);
-    console.log(`     tiers ${h.tiers.join(' + ')} (x${1 + h.boost})  paid ${h.paid ? `${h.paid.toFixed(2)}` : 'n/a'}  bought ${new Date(h.first).toISOString().slice(0, 10)}  ${h.active ? `active until ${new Date(h.expires).toISOString().slice(0, 10)}` : 'EXPIRED'}`);
+    console.log(`     tiers ${h.tiers.join(' + ')} (x${1 + h.boost})  paid ${h.paid ? `${h.paid.toFixed(2)} ${h.currency}` : 'n/a'}  bought ${new Date(h.first).toISOString().slice(0, 10)}  ${h.active ? `active until ${new Date(h.expires).toISOString().slice(0, 10)}` : 'EXPIRED'}`);
     console.log(`     mined since buying: ${btc(mined)} BTC over ${daysHeld} day(s) (${minedDays} day(s) with mining) = ${btc(perDay)}/day`);
     console.log(`     ad effort: ${effort.toFixed(1)}% of the ${Math.round(maxGh)} GH/s/day maximum  ->  projects to ${btc(projectedYear)} BTC/year`);
     console.log(`     balance now ${btc(held)} BTC, withdrawn ${btc(withdrawn)} BTC in ${withdrawals.length} withdrawal(s)`);
@@ -95,8 +96,17 @@ async function main() {
     }
   }
 
-  console.log(`\nTotals: paid ${totalPaid.toFixed(2)} | mined since buying ${btc(totalMined)} BTC | withdrawn ${btc(totalWithdrawn)} BTC`);
+  // Prices are in the buyer's own currency, so they are not summed.
+  console.log(`\nTotals: mined since buying ${btc(totalMined)} BTC | withdrawn ${btc(totalWithdrawn)} BTC`);
   console.log(`At their current pace these holders would mine ${btc(totalProjected)} BTC over a year.`);
+  // Is the multiplied track being used at all? It only pays on that track.
+  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+  const [usedSuperToday, activeToday, holdersUsingSuper] = await Promise.all([
+    db.collection('userminings').countDocuments({ thirty_gh_rewarded_ads_watched: { $gt: 0 } }),
+    db.collection('userminings').countDocuments({ updatedAt: { $gte: today } }),
+    db.collection('userminings').countDocuments({ user: { $in: ids }, thirty_gh_rewarded_ads_watched: { $gt: 0 } }),
+  ]);
+  console.log(`Super Ad Miner track (the one the multiplier pays on): ${usedSuperToday} user(s) have claims on it right now, out of ${activeToday} active today; ${holdersUsingSuper} of ${holders.size} privilege holder(s).`);
   console.log('Ad effort is what matters: 100% means watching every ad every day, which is where a plan can pay out more than it cost.\n');
 }
 
