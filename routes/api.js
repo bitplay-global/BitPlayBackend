@@ -31,6 +31,7 @@ import mining_session_handles from './api_routes/mining-session-handles.js'
 import { getDashboardStats, getDashboardStatsFiltered } from '../helpers/dashboardStats.js';
 import { requireAdminAuth } from "../middleware/requireAdminAuth.js";
 import { getVersionPolicy } from '../helpers/versionPolicy.js';
+import { getBtcUsdPriceCached } from '../helpers/btcPrice.js';
 
 const router = express.Router();
 
@@ -49,6 +50,23 @@ router.get(['/deposit-address/:userId', '/deposit-address/:userId/:asset'], rate
 router.post('/help/create', rateLimit({ name: 'support-ticket', windowMs: MIN15, max: 10 }));
 router.post('/firebase_tokens/mining-stopped', rateLimit({ name: 'push-trigger', windowMs: MIN15, max: 30 }));
 router.post(['/daily-rewards/claim', '/claim_daily_miner', '/user_mining/:game-history/claim', '/user_mining/trading-claim'], rateLimit({ name: 'reward-claim', windowMs: MIN15, max: 60 }));
+
+/**
+ * BTC/USD price, so the app has a source of its own when CoinGecko and Binance
+ * are unreachable or rate-limiting it. Same cached helper the withdrawal
+ * validation uses, so app and server agree on the rate.
+ * `usd: null` means no source answered and nothing is cached -- the app shows
+ * the value as unavailable rather than as zero.
+ */
+router.get('/btc-price', async (req, res) => {
+  try {
+    const usd = await getBtcUsdPriceCached(60_000);
+    return res.json({ success: usd > 0, usd: usd > 0 ? usd : null, asOf: new Date().toISOString() });
+  } catch (error) {
+    console.error('BTC price error:', error.message);
+    return res.json({ success: false, usd: null, asOf: new Date().toISOString() });
+  }
+});
 
 router.get('/app-version-policy', async (req, res) => {
   try {
