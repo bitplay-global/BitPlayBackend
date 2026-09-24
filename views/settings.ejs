@@ -1,0 +1,258 @@
+<%- include('partials/header', { title: 'Settings' }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content p-4 text-light">
+  <h2 class="mb-4">System Settings</h2>
+
+  <% if (typeof settingsMessage !== 'undefined' && settingsMessage) { %>
+  <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+    <%= settingsMessage %>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+  <% } %>
+  <% if (typeof settingsError !== 'undefined' && settingsError) { %>
+  <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+    <%= settingsError %>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+  <% } %>
+
+  <div class="settings-card bg-dark rounded-4 p-4 mb-4 shadow-lg" style="background: linear-gradient(135deg, #0f172a, #1e293b);">
+    <h5 class="text-white mb-3"><i class="fas fa-money-bill-wave me-2"></i>Withdrawal Limits (BTC)</h5>
+    <p class="text-muted small mb-3">Min and max withdrawal amounts in BTC. Used by the app and API for validation.</p>
+    <form method="POST" action="/admin/settings/withdrawal-limits" class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label text-white">Min withdrawal (BTC)</label>
+        <input type="number" step="any" min="0" name="withdrawalMinBtc" class="form-control bg-dark text-light border-secondary"
+          value="<%= typeof withdrawalMinBtc !== 'undefined' ? withdrawalMinBtc : 0.0005 %>" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label text-white">Max withdrawal (BTC)</label>
+        <input type="number" step="any" min="0" name="withdrawalMaxBtc" class="form-control bg-dark text-light border-secondary"
+          value="<%= typeof withdrawalMaxBtc !== 'undefined' ? withdrawalMaxBtc : 0.009 %>" required>
+      </div>
+      <div class="col-md-4">
+        <button type="submit" class="btn btn-primary">Save limits</button>
+      </div>
+    </form>
+  </div>
+<!-- 
+  <div class="settings-card bg-dark rounded-4 p-4 mb-4 shadow-lg" style="background: linear-gradient(135deg, #0f172a, #1e293b);">
+    <h5 class="text-white mb-3"><i class="fas fa-mobile-alt me-2"></i>App Version Update Policy</h5>
+    <p class="text-muted small mb-3">Controls update popup from backend/database for Android and iOS (force or optional).</p>
+    <form method="POST" action="/admin/settings/version-policy" class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label text-white">Enable policy</label>
+        <select name="versionPolicyEnabled" class="form-control bg-dark text-light border-secondary">
+          <option value="true" <%= versionPolicy?.enabled ? 'selected' : '' %>>Enabled</option>
+          <option value="false" <%= !versionPolicy?.enabled ? 'selected' : '' %>>Disabled</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Global mode</label>
+        <select name="versionPolicyMode" class="form-control bg-dark text-light border-secondary">
+          <option value="none" <%= versionPolicy?.mode === 'none' ? 'selected' : '' %>>None</option>
+          <option value="optional" <%= versionPolicy?.mode === 'optional' ? 'selected' : '' %>>Optional</option>
+          <option value="force" <%= versionPolicy?.mode === 'force' ? 'selected' : '' %>>Force</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Global latest version</label>
+        <input type="text" name="versionLatestVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.latestVersion || '' %>" placeholder="e.g. 1.0.25">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Global min supported</label>
+        <input type="text" name="versionMinSupportedVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.minSupportedVersion || '' %>" placeholder="e.g. 1.0.20">
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label text-white">Force below version</label>
+        <input type="text" name="versionForceBelowVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.forceUpdateBelowVersion || '' %>" placeholder="e.g. 1.0.22">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Dismissible (global)</label>
+        <select name="versionDismissible" class="form-control bg-dark text-light border-secondary">
+          <option value="true" <%= versionPolicy?.dismissible !== false ? 'selected' : '' %>>Yes</option>
+          <option value="false" <%= versionPolicy?.dismissible === false ? 'selected' : '' %>>No</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Popup title</label>
+        <input type="text" name="versionTitle" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.title || '' %>" placeholder="Update available">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label text-white">Button text</label>
+        <input type="text" name="versionButtonText" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.buttonText || '' %>" placeholder="Update now">
+      </div>
+      <div class="col-12">
+        <label class="form-label text-white">Popup message</label>
+        <textarea name="versionMessage" rows="2" class="form-control bg-dark text-light border-secondary" placeholder="A new version is available."><%= versionPolicy?.message || '' %></textarea>
+      </div>
+
+      <div class="col-12"><hr class="border-secondary"></div>
+      <div class="col-12">
+        <h6 class="text-info mb-2">Android override</h6>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Mode</label>
+        <select name="versionAndroidMode" class="form-control bg-dark text-light border-secondary">
+          <option value="none" <%= versionPolicy?.android?.mode === 'none' ? 'selected' : '' %>>None</option>
+          <option value="optional" <%= versionPolicy?.android?.mode === 'optional' ? 'selected' : '' %>>Optional</option>
+          <option value="force" <%= versionPolicy?.android?.mode === 'force' ? 'selected' : '' %>>Force</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Latest</label>
+        <input type="text" name="versionAndroidLatestVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.android?.latestVersion || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Min supported</label>
+        <input type="text" name="versionAndroidMinSupportedVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.android?.minSupportedVersion || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Force below</label>
+        <input type="text" name="versionAndroidForceBelowVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.android?.forceUpdateBelowVersion || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Dismissible</label>
+        <select name="versionAndroidDismissible" class="form-control bg-dark text-light border-secondary">
+          <option value="true" <%= versionPolicy?.android?.dismissible !== false ? 'selected' : '' %>>Yes</option>
+          <option value="false" <%= versionPolicy?.android?.dismissible === false ? 'selected' : '' %>>No</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Store URL</label>
+        <input type="text" name="versionAndroidStoreUrl" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.android?.storeUrl || '' %>">
+      </div>
+
+      <div class="col-12 mt-2">
+        <h6 class="text-info mb-2">iOS override</h6>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Mode</label>
+        <select name="versionIosMode" class="form-control bg-dark text-light border-secondary">
+          <option value="none" <%= versionPolicy?.ios?.mode === 'none' ? 'selected' : '' %>>None</option>
+          <option value="optional" <%= versionPolicy?.ios?.mode === 'optional' ? 'selected' : '' %>>Optional</option>
+          <option value="force" <%= versionPolicy?.ios?.mode === 'force' ? 'selected' : '' %>>Force</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Latest</label>
+        <input type="text" name="versionIosLatestVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.ios?.latestVersion || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Min supported</label>
+        <input type="text" name="versionIosMinSupportedVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.ios?.minSupportedVersion || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Force below</label>
+        <input type="text" name="versionIosForceBelowVersion" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.ios?.forceUpdateBelowVersion || '' %>">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Dismissible</label>
+        <select name="versionIosDismissible" class="form-control bg-dark text-light border-secondary">
+          <option value="true" <%= versionPolicy?.ios?.dismissible !== false ? 'selected' : '' %>>Yes</option>
+          <option value="false" <%= versionPolicy?.ios?.dismissible === false ? 'selected' : '' %>>No</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label text-white">Store URL</label>
+        <input type="text" name="versionIosStoreUrl" class="form-control bg-dark text-light border-secondary"
+          value="<%= versionPolicy?.ios?.storeUrl || '' %>">
+      </div>
+
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary">Save version policy</button>
+      </div>
+    </form>
+  </div> -->
+
+  <!-- AdMob API (OAuth – no service account, refresh token from Settings) -->
+  <div class="settings-card bg-dark rounded-4 p-4 mb-4 shadow-lg" style="background: linear-gradient(135deg, #0f172a, #1e293b);">
+    <h5 class="text-white mb-3"><i class="fas fa-chart-line me-2"></i>AdMob API (Dashboard revenue)</h5>
+    <p class="text-muted small mb-3">Uses your Google account. Tokens are stored here and refreshed automatically; re-authorize only if refresh fails.</p>
+    <% if (typeof admobConfigured !== 'undefined' && admobConfigured) { %>
+    <p class="text-success mb-2"><i class="fas fa-check-circle me-2"></i>Connected. Dashboard will fetch AdMob revenue (iOS/Android) using stored tokens.</p>
+    <% } else { %>
+    <p class="text-warning mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Not connected. Connect below to show AdMob revenue on the dashboard.</p>
+    <% } %>
+    <div class="row g-3 align-items-end">
+      <% if (typeof admobAuthUrl !== 'undefined' && admobAuthUrl) { %>
+      <div class="col-md-4">
+        <a href="<%= admobAuthUrl %>" class="btn btn-primary"><i class="fab fa-google me-2"></i>Connect with Google</a>
+      </div>
+      <% } %>
+      <div class="col-md-8">
+        <form method="POST" action="/admin/settings/admob-tokens" class="row g-2 align-items-end">
+          <div class="col-auto">
+            <label class="form-label text-white small mb-0">Or paste refresh token</label>
+            <input type="password" name="refresh_token" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="1//0e..." style="min-width: 220px;">
+          </div>
+          <div class="col-auto">
+            <input type="text" name="access_token" class="form-control form-control-sm bg-dark text-light border-secondary" placeholder="Access token (optional)" style="min-width: 180px;">
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Save tokens</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <p class="text-muted small mt-2 mb-0">Set ADMOB_ACCOUNT_ID, ADMOB_CLIENT_ID, and ADMOB_CLIENT_SECRET in .env. In Google Cloud Console, add this <strong>exact</strong> redirect URI: <code class="text-info"><%= typeof admobAuthUrl !== 'undefined' && admobAuthUrl ? admobAuthUrl.replace('/auth','/callback') : 'http://localhost:3001/admin/admob/callback' %></code></p>
+    <p class="text-muted small mt-1 mb-0"><a href="/admin/admob/status" target="_blank" rel="noopener">Check AdMob status (debug)</a> — shows configured, hasTokens, and a test revenue fetch or error.</p>
+  </div>
+
+  <div class="settings-card bg-dark rounded-4 p-4 mb-4 shadow-lg" style="background: linear-gradient(135deg, #0f172a, #1e293b);">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="setting-item p-3 bg-gradient rounded-3" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+          <h5 class="text-white mb-2">Site Name</h5>
+          <p class="text-muted mb-0">Bitcoin Mining Admin Panel</p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="setting-item p-3 bg-gradient rounded-3" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+          <h5 class="text-white mb-2">Database Connection</h5>
+          <p class="text-success mb-0"><i class="fas fa-check-circle me-2"></i>MongoDB Atlas - Connected</p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="setting-item p-3 bg-gradient rounded-3" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+          <h5 class="text-white mb-2">Session Timeout</h5>
+          <p class="text-muted mb-0">24 hours</p>
+        </div>
+      </div>
+      <!-- <div class="col-md-6">
+        <div class="setting-item p-3 bg-gradient rounded-3" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+          <h5 class="text-white mb-2">Default Password</h5>
+          <p class="text-muted mb-0">admin@123</p>
+        </div>
+      </div> -->
+      <div class="col-md-6">
+        <div class="setting-item p-3 bg-gradient rounded-3" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+          <h5 class="text-white mb-2">Server Status</h5>
+          <p class="text-success mb-0"><i class="fas fa-server me-2"></i>Running on Port 3001</p>
+        </div>
+      </div>
+      <!-- <div class="col-md-6">
+        <div class="setting-item p-3 bg-gradient rounded-3" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+          <h5 class="text-white mb-2">Environment</h5>
+          <p class="text-warning mb-0"><i class="fas fa-code me-2"></i>Development Mode</p>
+        </div>
+      </div> -->
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>

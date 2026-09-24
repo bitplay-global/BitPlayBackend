@@ -1,0 +1,183 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<%
+  // Builds a query string carrying both tables' pagination + the shared search
+  // term, so paging one table never resets the other's position.
+  const buildQS = (overrides) => {
+    const params = Object.assign({ page, ppage: privilegePage, q: query }, overrides);
+    const parts = [];
+    if (params.page && params.page !== 1) parts.push('page=' + params.page);
+    if (params.ppage && params.ppage !== 1) parts.push('ppage=' + params.ppage);
+    if (params.q) parts.push('q=' + encodeURIComponent(params.q));
+    return parts.length ? '?' + parts.join('&') : '?';
+  };
+%>
+
+<div class="main-content">
+    <div id="loading" style="display: none;">Searching...</div>
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header d-flex align-items-center">
+                <h2>Purchases (IAP)</h2>
+                <div class="right-aligned-tableheader">
+                    <input
+                        type="text"
+                        id="purchaseSearch"
+                        class="form-control"
+                        placeholder="Search by user, email, plan, product..."
+                        value="<%= query || '' %>"
+                        style="max-width: 250px;"
+                    />
+                </div>
+            </div>
+            <div class="table-responsive data-table" id="purchasesTableContainer">
+                <table class="table table-striped table-hover table-bordered align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Plan</th>
+                            <th>Hashrate</th>
+                            <th>Product ID</th>
+                            <th>Price</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Hashpower (before → after)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="purchasesTbody">
+                        <% purchases.forEach(function(p, index) { %>
+                        <tr data-id="<%= p._id %>">
+                            <td><%= (page - 1) * limit + index + 1 %></td>
+                            <td><%= p.userName %></td>
+                            <td><%= p.userEmail %></td>
+                            <td><%= p.planName %></td>
+                            <td><%= p.hashrate %></td>
+                            <td><%= p.product_identifier %></td>
+                            <td><%= p.currency %> <%= p.price_paid != null ? Number(p.price_paid).toFixed(2) : '-' %></td>
+                            <td><%= p.purchase_date ? new Date(p.purchase_date).toLocaleString() : '-' %></td>
+                            <td><%= p.status %></td>
+                            <td><%= p.existing_hashpower != null ? p.existing_hashpower : '-' %> → <%= p.updated_hashpower != null ? p.updated_hashpower : '-' %></td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination mt-3">
+                <% if (page > 1) { %>
+                <a href="<%= buildQS({ page: page - 1 }) %>" class="btn btn-outline-primary me-2">&laquo; Prev</a>
+                <% } %>
+                <span>Page <%= page %> <% if (total > 0) { %>(<%= total %> total)<% } %></span>
+                <% if (purchases.length === limit && (page * limit) < total) { %>
+                <a href="<%= buildQS({ page: page + 1 }) %>" class="btn btn-outline-primary ms-2">Next &raquo;</a>
+                <% } %>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header">
+                <h2>Super Privileges</h2>
+            </div>
+            <p style="padding: 0 16px; opacity: .75;">
+                Ad-reward multiplier purchases (recorded separately from the plan/hashpower
+                purchases above).
+            </p>
+            <div class="table-responsive data-table">
+                <table class="table table-striped table-hover table-bordered align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Tier</th>
+                            <th>Product ID</th>
+                            <th>Price</th>
+                            <th>Purchased</th>
+                            <th>Expires</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (privilegePurchases.length === 0) { %>
+                        <tr><td colspan="9">No Super Privileges purchases yet</td></tr>
+                        <% } %>
+                        <% privilegePurchases.forEach(function(p, index) { %>
+                        <tr>
+                            <td><%= (privilegePage - 1) * privilegeLimit + index + 1 %></td>
+                            <td><%= p.userName %></td>
+                            <td><%= p.userEmail %></td>
+                            <td><%= p.tierLabel %></td>
+                            <td><%= p.product_identifier %></td>
+                            <td><%= p.currency %> <%= p.price_paid != null ? Number(p.price_paid).toFixed(2) : '-' %></td>
+                            <td><%= p.purchase_date ? new Date(p.purchase_date).toLocaleString() : '-' %></td>
+                            <td><%= p.expires_at ? new Date(p.expires_at).toLocaleDateString() : '-' %></td>
+                            <td><%= p.status %></td>
+                        </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination mt-3">
+                <% if (privilegePage > 1) { %>
+                <a href="<%= buildQS({ ppage: privilegePage - 1 }) %>" class="btn btn-outline-primary me-2">&laquo; Prev</a>
+                <% } %>
+                <span>Page <%= privilegePage %> <% if (privilegeTotal > 0) { %>(<%= privilegeTotal %> total)<% } %></span>
+                <% if (privilegePurchases.length === privilegeLimit && (privilegePage * privilegeLimit) < privilegeTotal) { %>
+                <a href="<%= buildQS({ ppage: privilegePage + 1 }) %>" class="btn btn-outline-primary ms-2">Next &raquo;</a>
+                <% } %>
+            </div>
+        </div>
+    </div>
+    <script>
+        const searchInput = document.getElementById('purchaseSearch');
+        const purchasesTbody = document.getElementById('purchasesTbody');
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                const query = searchInput.value.trim();
+                document.getElementById('loading').style.display = 'block';
+                try {
+                    const response = await fetch(`/admin/purchases?q=${encodeURIComponent(query)}&page=1`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    const data = await response.json();
+                    purchasesTbody.innerHTML = '';
+                    if (!data.purchases || data.purchases.length === 0) {
+                        purchasesTbody.innerHTML = '<tr><td colspan="10">No purchases found</td></tr>';
+                        return;
+                    }
+                    data.purchases.forEach((p, index) => {
+                        const dateStr = p.purchase_date ? new Date(p.purchase_date).toLocaleString() : '-';
+                        const priceStr = p.currency + ' ' + (p.price_paid != null ? Number(p.price_paid).toFixed(2) : '-');
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-id', p._id);
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${p.userName}</td>
+                            <td>${p.userEmail}</td>
+                            <td>${p.planName}</td>
+                            <td>${p.hashrate}</td>
+                            <td>${p.product_identifier}</td>
+                            <td>${priceStr}</td>
+                            <td>${dateStr}</td>
+                            <td>${p.status}</td>
+                            <td>${p.existing_hashpower != null ? p.existing_hashpower : '-'} → ${p.updated_hashpower != null ? p.updated_hashpower : '-'}</td>
+                        `;
+                        purchasesTbody.appendChild(row);
+                    });
+                } catch (err) {
+                    console.error('Search failed:', err);
+                } finally {
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 300);
+        });
+    </script>
+</div>
+
+<%- include('partials/footer') %>

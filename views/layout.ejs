@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - DashPro Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <% if (typeof user !== 'undefined' && user) { %>
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>DashPro</h2>
+            </div>
+            <ul class="sidebar-menu">
+                <li class="<%= title === 'Dashboard' ? 'active' : '' %>">
+                    <a href="/dashboard">
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="<%= title === 'Users Management' ? 'active' : '' %>">
+                    <a href="/users">
+                        <i class="fas fa-users"></i>
+                        <span>Users</span>
+                    </a>
+                </li>
+                <li class="<%= title === 'Transactions' ? 'active' : '' %>">
+                    <a href="/transactions">
+                        <i class="fas fa-credit-card"></i>
+                        <span>Transactions</span>
+                    </a>
+                </li>
+                <li class="<%= title === 'Support Tickets' ? 'active' : '' %>">
+                    <a href="/support">
+                        <i class="fas fa-headset"></i>
+                        <span>Support</span>
+                    </a>
+                </li>
+                <li class="<%= title === 'Settings' ? 'active' : '' %>">
+                    <a href="/settings">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1><%= title %></h1>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search...">
+                    </div>
+                    <div class="user-info">
+                        <i class="fas fa-user-circle"></i>
+                        <span>Hello, <%= user %>!</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <main class="page-content">
+                <%- body %>
+            </main>
+        </div>
+        <% } else { %>
+        <!-- Login Page Content -->
+        <main class="login-content">
+            <%- body %>
+        </main>
+        <% } %>
+    </div>
+
+    <script src="/js/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Same checks as pre-commit, again at push time. See scripts/security-checks.sh.
+# Enable once per clone:  git config core.hooksPath .githooks
+exec sh scripts/security-checks.sh

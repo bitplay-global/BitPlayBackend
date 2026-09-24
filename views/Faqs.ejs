@@ -1,0 +1,134 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+  <div class="card-container">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h2>FAQs</h2>
+      <div>
+        <input id="faqSearch" class="form-control d-inline me-2" placeholder="Search FAQs..." value="<%= searchQuery %>" style="width: 250px;" />
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createFaqModal">+ Add New</button>
+      </div>
+    </div>
+
+    <div class="table-responsive data-table">
+      <table class="table table-striped table-bordered align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Question</th>
+            <th>Answer</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="faqsTbody">
+          <% faqs.forEach((faq, index) => { %>
+            <tr data-id="<%= faq._id %>">
+              <td><%= (page - 1) * limit + index + 1 %></td>
+              <td><%= faq.name %></td>
+              <td><%= faq.message %></td>
+              <td><%= new Date(faq.date_created).toLocaleDateString() %></td>
+              <td><button class="btn btn-sm btn-danger delete-faq-btn">🗑</button></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination mt-3">
+      <% if (page > 1) { %>
+        <a href="?page=<%= page - 1 %><%= searchQuery ? '&q=' + encodeURIComponent(searchQuery) : '' %>" class="btn btn-outline-primary me-2">Prev</a>
+      <% } %>
+      <span>Page <%= page %></span>
+      <% if (faqs.length === limit) { %>
+        <a href="?page=<%= page + 1 %><%= searchQuery ? '&q=' + encodeURIComponent(searchQuery) : '' %>" class="btn btn-outline-primary ms-2">Next</a>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<!-- Create Modal -->
+<div class="modal fade" id="createFaqModal" tabindex="-1" aria-labelledby="faqModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" action="/api/faqs/create" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add FAQ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label>Question</label>
+          <input name="name" class="form-control" required />
+        </div>
+        <div class="mb-3">
+          <label>Answer</label>
+          <textarea name="message" class="form-control" rows="4" required></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const faqSearch = document.getElementById('faqSearch');
+  const faqsTbody = document.getElementById('faqsTbody');
+
+  faqSearch.addEventListener('input', async () => {
+    const query = faqSearch.value.trim();
+    const res = await fetch(`/admin/faqs?q=${encodeURIComponent(query)}&page=1`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+
+    const data = await res.json();
+    faqsTbody.innerHTML = '';
+
+    if (!data.faqs.length) {
+      faqsTbody.innerHTML = '<tr><td colspan="5">No FAQs found.</td></tr>';
+      return;
+    }
+
+    data.faqs.forEach((faq, index) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${index + 1}</td>
+        <td>${faq.name}</td>
+        <td>${faq.message}</td>
+        <td>${new Date(faq.date_created).toLocaleDateString()}</td>
+        <td><button class="btn btn-sm btn-danger delete-faq-btn" data-id="${faq._id}">🗑</button></td>
+      `;
+      faqsTbody.appendChild(row);
+    });
+
+    attachDeleteHandlers();
+  });
+
+  function attachDeleteHandlers() {
+    document.querySelectorAll('.delete-faq-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('tr');
+        const id = row.dataset.id || btn.dataset.id;
+
+        if (!confirm('Delete this FAQ?')) return;
+
+        const res = await fetch(`/api/faqs/${id}`, {
+          method: 'DELETE'
+        });
+
+        if (res.ok) {
+          row.remove();
+        } else {
+          alert('Failed to delete');
+        }
+      });
+    });
+  }
+
+  attachDeleteHandlers();
+</script>
+
+<%- include('partials/footer') %>

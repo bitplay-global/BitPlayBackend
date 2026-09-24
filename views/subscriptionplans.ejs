@@ -1,0 +1,224 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+
+    <div id="loading" style="display: none;">Searching...</div>
+
+    <!-- Create Plan Modal -->
+    <div class="modal fade" id="createPlanModal" tabindex="-1" aria-labelledby="createPlanLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST" action="/api/subscriptionplans/create">
+        <div class="modal-header">
+            <h5 class="modal-title" id="createPlanLabel">Create Subscription Plan</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+            <div class="mb-3">
+                <label for="name" class="form-label">Plan Name</label>
+                <input type="text" class="form-control" name="name" id="name" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="hashrate" class="form-label">Hashrate</label>
+                <input type="number" class="form-control" name="hashrate" id="hashrate" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="unit" class="form-label">Unit</label>
+                <input type="text" class="form-control" name="hashrate_unit" id="hashrate_unit" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="duration" class="form-label">Duration (Months)</label>
+                <input type="number" class="form-control" name="duration" id="duration" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="maintenance_cost" class="form-label">Maintenance Cost ($)</label>
+                <input type="number" step="0.01" class="form-control" name="maintenance_cost" id="maintenance_cost" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="plan_cost" class="form-label">Plan Cost ($)</label>
+                <input type="number" step="0.01" class="form-control" name="plan_cost" id="plan_cost" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="apple_identifier" class="form-label">Apple Identifier</label>
+                <input type="text" class="form-control" name="apple_identifier" id="apple_identifier" />
+            </div>
+
+            <div class="mb-3">
+                <label for="google_identifier" class="form-label">Google Identifier</label>
+                <input type="text" class="form-control" name="google_identifier" id="google_identifier" />
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Create</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+        </form>
+    </div>
+    </div>
+
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header d-flex align-items-center">
+                <h2>Subscription Plans</h2>
+
+                <div class="right-aligned-tableheader">
+
+                    <input
+                        type="text"
+                        id="planSearch"
+                        class="form-control"
+                        placeholder="Search plans..."
+                        value="<%= query || '' %>"
+                        style="max-width: 250px;"
+                    />
+
+                    <button class="btn btn-primary btn-table-create" data-bs-toggle="modal" data-bs-target="#createPlanModal">
+                        Create Plan
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-responsive data-table" id="plansTableContainer">
+                <table class="table table-striped table-hover table-bordered align-middle">
+                    <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Hashrate</th>
+                        <th>Unit</th>
+                        <th>Duration (Months)</th>
+                        <th>Maintenance Cost</th>
+                        <th>Plan Cost</th>
+                        <th>Apple Identifier</th>
+                        <th>Google Identifier</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="plansTbody">
+                    <% plans.forEach((plan, index) => { %>
+                        <tr data-id="<%= plan.id %>">
+                            <td><%= (page - 1) * limit + index + 1 %></td>
+                            <td><%= plan.name %></td>
+                            <td><%= plan.hashrate %></td>
+                            <td><%= plan.unit %></td>
+                            <td><%= plan.duration %></td>
+                            <td>$<%= plan.maintenance_cost.toFixed(2) %></td>
+                            <td>$<%= plan.plan_cost.toFixed(2) %></td>
+                            <td><%= plan.apple_identifier || '' %></td>
+                            <td><%= plan.google_identifier || '' %></td>
+                            <td>
+                                <button class="btn btn-danger btn-sm delete-plan-btn">Delete</button>
+                            </td>
+                        </tr>
+                    <% }) %>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination mt-3">
+            <% if (page > 1) { %>
+                <a href="?page=<%= page - 1 %><%= query ? '&q=' + encodeURIComponent(query) : '' %>" class="btn btn-outline-primary me-2">&laquo; Prev</a>
+            <% } %>
+            <span>Page <%= page %></span>
+            <% if (plans.length === limit) { %>
+                <a href="?page=<%= page + 1 %><%= query ? '&q=' + encodeURIComponent(query) : '' %>" class="btn btn-outline-primary ms-2">Next &raquo;</a>
+            <% } %>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('planSearch');
+        const plansTbody = document.getElementById('plansTbody');
+
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+
+            searchTimeout = setTimeout(async () => {
+                const query = searchInput.value.trim();
+                document.getElementById('loading').style.display = 'block';
+
+                try {
+                    const response = await fetch(`/admin/subscriptionplans?q=${encodeURIComponent(query)}&page=1`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+
+                    const data = await response.json();
+                    plansTbody.innerHTML = '';
+
+                    if (data.plans.length === 0) {
+                        plansTbody.innerHTML = '<tr><td colspan="6">No subscription plans found</td></tr>';
+                        return;
+                    }
+
+                    data.plans.forEach((plan, index) => {
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-id', plan.id);
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${plan.name}</td>
+                            <td>${plan.hashrate}</td>
+                            <td>${plan.unit}</td>
+                            <td>${plan.duration}</td>
+                            <td>$${plan.maintenance_cost}</td>
+                            <td>$${plan.plan_cost}</td>
+                            <td>${plan.apple_identifier || ''}</td>
+                            <td>${plan.google_identifier || ''}</td>
+                            <td>
+                                <button class="btn btn-danger btn-sm delete-plan-btn">Delete</button>
+                            </td>
+                        `;
+                        plansTbody.appendChild(row);
+                    });
+
+                } catch (err) {
+                    console.error('Search failed:', err);
+                } finally {
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 300);
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const plansTbody = document.getElementById('plansTbody');
+
+            plansTbody.addEventListener('click', async (e) => {
+                if (e.target.classList.contains('delete-plan-btn')) {
+                    const row = e.target.closest('tr');
+                    const planId = row.dataset.id;
+
+                    if (!confirm('Are you sure you want to delete this plan?')) return;
+
+                    try {
+                        const response = await fetch(`/api/subscriptionplans/${planId}`, {
+                            method: 'DELETE',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+
+                        if (response.ok) {
+                            row.remove();
+                        } else {
+                            alert('Failed to delete plan.');
+                        }
+                    } catch (err) {
+                        console.error('Delete failed:', err);
+                        alert('Error occurred while deleting.');
+                    }
+                }
+            });
+        });
+    </script>
+
+<%- include('partials/footer') %>

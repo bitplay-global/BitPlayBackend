@@ -1,0 +1,259 @@
+<%- include('partials/header', { title: 'Support Tickets' }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+    <div id="loading" style="display: none;">Searching...</div>
+
+    <div class="modal fade" id="emailModal" tabindex="-1" aria-labelledby="emailModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <form id="emailForm" method="POST">
+            <div class="modal-content">
+                <div class="modal-header">
+                <h5 class="modal-title">Reply to Ticket</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>Name:</strong> <span id="modalName"></span></p>
+                    <p><strong>Email:</strong> <span id="modalEmail"></span></p>
+                    <textarea class="form-control" name="replyMessage" id="replyMessage" placeholder="Type your reply..." rows="5" required></textarea>
+                    <input type="hidden" id="ticketEmail" name="email">
+                    <input type="hidden" id="ticketIdField" name="ticketId">
+                    <input type="hidden" id="ticketNameField" name="name">
+                </div>
+                <div class="modal-footer">
+                <button type="submit" class="btn btn-success">Send Reply</button>
+                </div>
+            </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h2 class="mb-0">Support Tickets</h2>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="smtpTestBtn" title="Verifies SMTP_USER/SMTP_PASS by connecting and authenticating">
+                    Test SMTP connection
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="brevoTestBtn" title="Checks Brevo API key via GET /account">
+                    Test Brevo connection
+                </button>
+                <input
+                    type="text"
+                    id="ticketSearch"
+                    class="form-control"
+                    placeholder="Search tickets..."
+                    value="<%= searchQuery || '' %>"
+                    style="max-width: 250px;"
+                />
+                </div>
+            </div>
+
+            <div class="table-responsive data-table" id="ticketsTableContainer">
+                <table class="table table-dark table-striped table-hover table-bordered align-middle" id="ticketsTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>User Name</th>
+                            <th>Email</th>
+                            <th>Message</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ticketsTbody">
+                        <% tickets.forEach((ticket, index) => { %>
+                            <tr data-id="<%= ticket._id %>" data-name="<%= ticket.name %>" data-email="<%= ticket.email %>">
+                                <td><%= (page - 1) * limit + index + 1 %></td>
+                                <td><%= ticket.name %></td>
+                                <td><%= ticket.email %></td>
+                                <td><%= ticket.message %></td>
+                                <td><%= ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : 'N/A' %></td>
+                                <td class="text-center">
+                                    <span class="icon-box text-primary me-1 email-btn" role="button" title="Email">
+                                        <i class="fas fa-envelope"></i>
+                                    </span>
+                                    <span class="icon-box text-danger delete-btn" role="button" title="Delete">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </span>
+                                </td>
+                            </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination mt-3 d-flex align-items-center">
+                <% if (page > 1) { %>
+                    <a href="?page=<%= page - 1 %><%= searchQuery ? '&q=' + encodeURIComponent(searchQuery) : '' %>" class="btn btn-outline-primary me-2">Prev</a>
+                <% } %>
+
+                <span class="me-2">Page <%= page %></span>
+
+                <% if (tickets.length === limit) { %>
+                    <a href="?page=<%= page + 1 %><%= searchQuery ? '&q=' + encodeURIComponent(searchQuery) : '' %>" class="btn btn-outline-primary ms-2">Next</a>
+                <% } %>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Search Script -->
+    <script>
+        document.getElementById('smtpTestBtn')?.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/help/smtp-status', { credentials: 'same-origin' });
+                const data = await res.json().catch(() => ({}));
+                if (data.success && data.ok) {
+                    alert('SMTP OK. Sending as: ' + (data.user || '—'));
+                } else {
+                    alert('SMTP check failed:\n' + (data.message || JSON.stringify(data)));
+                }
+            } catch (e) {
+                alert('Request failed: ' + (e.message || e));
+            }
+        });
+
+        document.getElementById('brevoTestBtn')?.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/help/brevo-status', { credentials: 'same-origin' });
+                const data = await res.json().catch(() => ({}));
+                if (data.success && data.ok) {
+                    alert('Brevo OK. Account: ' + (data.brevoAccountEmail || '—') + '\nKey length (sanitized): ' + (data.keyLength || '—'));
+                } else {
+                    const msg = data.brevoMessage || data.message || JSON.stringify(data);
+                    alert('Brevo check failed:\n' + msg + (data.keyLength != null ? '\nKey length after sanitize: ' + data.keyLength : ''));
+                }
+            } catch (e) {
+                alert('Request failed: ' + (e.message || e));
+            }
+        });
+
+        const searchInput = document.getElementById('ticketSearch');
+        const ticketsTbody = document.getElementById('ticketsTbody');
+
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+
+            searchTimeout = setTimeout(async () => {
+                const query = searchInput.value.trim();
+
+                try {
+                    const response = await fetch(`/admin/help?q=${encodeURIComponent(query)}&page=1`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+
+                    const data = await response.json();
+                    ticketsTbody.innerHTML = '';
+
+                    if (data.tickets.length === 0) {
+                        ticketsTbody.innerHTML = '<tr><td colspan="5">No tickets found</td></tr>';
+                        return;
+                    }
+
+                    data.tickets.forEach((ticket, index) => {
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-id', ticket._id);
+                        row.setAttribute('data-name', ticket.name || '');
+                        row.setAttribute('data-email', ticket.email || '');
+
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${ticket.name}</td>
+                            <td>${ticket.email}</td>
+                            <td>${ticket.message}</td>
+                            <td>${ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : 'N/A'}</td>
+                            <td class="text-center">
+                                <span class="icon-box text-primary me-1 email-btn" role="button" title="Email">
+                                    <i class="fas fa-envelope"></i>
+                                </span>
+                                <span class="icon-box text-danger delete-btn" role="button" title="Delete">
+                                    <i class="fas fa-trash-alt"></i>
+                                </span>
+                            </td>
+                        `;
+
+                        ticketsTbody.appendChild(row);
+                    });
+
+                } catch (err) {
+                    console.error('Search failed:', err);
+                }
+            }, 300);
+        });
+
+        const ticketsTbodyEl = document.getElementById('ticketsTbody');
+        ticketsTbodyEl.addEventListener('click', async (e) => {
+            const del = e.target.closest('.delete-btn');
+            const mail = e.target.closest('.email-btn');
+            if (del) {
+                const row = del.closest('tr');
+                const id = row?.dataset?.id;
+                if (!id || !confirm('Are you sure you want to delete this ticket?')) return;
+                try {
+                    const res = await fetch(`/api/help/${id}/delete`, { method: 'DELETE' });
+                    if (res.ok) row.remove();
+                    else alert('Failed to delete ticket.');
+                } catch (err) {
+                    console.error('Delete failed:', err);
+                }
+                return;
+            }
+            if (mail) {
+                const row = mail.closest('tr');
+                const name = row?.dataset?.name || '';
+                const email = row?.dataset?.email || '';
+                const ticketId = row?.dataset?.id || '';
+
+                document.getElementById('modalName').textContent = name;
+                document.getElementById('modalEmail').textContent = email;
+                document.getElementById('ticketEmail').value = email;
+                document.getElementById('ticketNameField').value = name;
+                document.getElementById('ticketIdField').value = ticketId;
+                document.getElementById('replyMessage').value = '';
+
+                const modal = new bootstrap.Modal(document.getElementById('emailModal'));
+                modal.show();
+            }
+        });
+
+        document.getElementById('emailForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const form = e.target;
+            const email = form.email.value;
+            const message = form.replyMessage.value;
+            const name = document.getElementById('ticketNameField').value || '';
+            const ticketId = document.getElementById('ticketIdField').value || '';
+
+            try {
+                const res = await fetch('/api/help/reply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ email, message, name, ticketId })
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    alert(data.message || 'Reply sent!');
+                    bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
+                } else {
+                    alert(data.message || 'Failed to send email.');
+                }
+            } catch (err) {
+                console.error('Email send failed:', err);
+                alert('Failed to send email.');
+            }
+        });
+
+    </script>
+
+    <script>
+        const loading = document.getElementById('loading');
+        loading.style.display = 'block';
+        loading.style.display = 'none';
+    </script>
+
+<%- include('partials/footer') %>

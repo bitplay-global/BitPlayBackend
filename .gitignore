@@ -1,0 +1,24 @@
+node_modules
+package-lock.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Firebase credentials
+config/firebase-service-account.json
+firebase-service-account.json
+**/firebase-service-account.json
+
+# Service-account keys and wallet material — never commit these.
+# The AdMob key below was committed and must be treated as compromised: revoke
+# it in Google Cloud IAM, since deleting the file does not remove it from git
+# history or from existing clones.
+admob-report-api-*.json
+*-service-account*.json
+wallets.json
+cookies.txt
+
+# Runtime logs hold user ids, wallet addresses and amounts; never commit them.
+logs/

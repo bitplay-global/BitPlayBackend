@@ -1,0 +1,84 @@
+<%- include('partials/header', { title: 'Profile' }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content p-4 text-light">
+  <h2 class="mb-4">Your Profile</h2>
+
+  <!-- Success/Error Messages -->
+  <% if (successMessage) { %>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+      <i class="fas fa-check-circle me-2"></i>
+      <%= successMessage %>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  <% } %>
+
+  <% if (errorMessage) { %>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+      <i class="fas fa-exclamation-circle me-2"></i>
+      <%= errorMessage %>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  <% } %>
+
+  <div class="profile-card bg-dark rounded-4 p-4 mb-4 d-flex align-items-center shadow-lg" style="background: linear-gradient(135deg, #0f172a, #1e293b);">
+    <div class="me-4 position-relative">
+      <img src="/images/user-placeholder.png" alt="Avatar"
+        class="rounded-circle border border-secondary"
+        style="width: 100px; height: 100px; object-fit: cover;" onerror="this.style.display='none'" />
+    </div>
+    <div>
+      <h3 class="mb-0 text-white" id="usernameDisplay">
+        <%= (webUser.firstname && webUser.lastname) ? (webUser.firstname + ' ' + webUser.lastname).trim() : (webUser.firstname || webUser.username || user || 'Admin') %>
+      </h3>
+      <p class="text-muted mb-0 mt-1"><%= webUser.email || 'No email' %></p>
+    </div>
+  </div>
+
+  <form action="/api/profile/save" method="POST" class="bg-gradient rounded-4 p-4 shadow-lg" style="background: linear-gradient(135deg, #1e293b, #0f172a);">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label text-muted small">First Name</label>
+        <input type="text" name="firstname" class="form-control form-control-lg bg-dark text-light border-secondary" placeholder="First Name" value="<%= webUser.firstname || '' %>">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-muted small">Last Name</label>
+        <input type="text" name="lastname" class="form-control form-control-lg bg-dark text-light border-secondary" placeholder="Last Name" value="<%= webUser.lastname || '' %>">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-muted small">Organization</label>
+        <input type="text" name="orgname" class="form-control form-control-lg bg-dark text-light border-secondary" placeholder="Organization Name" value="<%= webUser.orgname || '' %>">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-muted small">Location</label>
+        <input type="text" name="location" class="form-control form-control-lg bg-dark text-light border-secondary" placeholder="Location" value="<%= webUser.location || '' %>">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-muted small">Email</label>
+        <input type="email" name="email" class="form-control form-control-lg bg-dark text-light border-secondary" placeholder="E-mail Address" value="<%= webUser.email || '' %>">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-muted small">Phone</label>
+        <input type="tel" name="phone" class="form-control form-control-lg bg-dark text-light border-secondary" placeholder="Phone Number" value="<%= webUser.phone || '' %>">
+      </div>
+    </div>
+    <div class="mt-4 text-center">
+      <button type="submit" class="btn btn-lg px-5 text-white" style="background: linear-gradient(to right, #6366f1, #a855f7); border: none;">
+        Save
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  if (typeof bootstrap !== 'undefined') {
+    setTimeout(function () {
+      document.querySelectorAll('.alert').forEach(function (el) {
+        var a = bootstrap.Alert.getOrCreateInstance(el);
+        if (a) a.close();
+      });
+    }, 5000);
+  }
+</script>
+
+<%- include('partials/footer') %>

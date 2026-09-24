@@ -1,0 +1,317 @@
+{
+  "info": {
+    "name": "Bitplay - Withdrawal API Test Suite",
+    "description": "Postman test suite for withdrawal creation security checks.\n\nCovers:\n- limits validation (min/max BTC)\n- Speed address validation\n- amountNumeric minimum\n- mined/deposit backed checks\n- pending request conflict\n- POST /api/withdrawals/create-speed-payment (BTC_DEPOSIT deduction + optional instant Speed send)\n\nIMPORTANT:\n- Replace {{userId}} with a real user.\n- For success request, adjust amountBtc/amountNumeric according to user balances and live BTC price.\n- create-speed-payment uses {{speedPaymentAmountBtc}} / {{speedPaymentAmountUsdt}} and may call the live Speed API.\n- In production, mobile headers are required.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1) GET withdrawal limits",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "url": "{{baseUrl}}/api/withdrawals/limits"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const json = pm.response.json();",
+              "pm.test('Has min/max limits', function () {",
+              "  pm.expect(json).to.have.property('minBtc');",
+              "  pm.expect(json).to.have.property('maxBtc');",
+              "  pm.expect(json.maxBtc).to.be.greaterThan(json.minBtc);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) POST create withdrawal - success (adjust values)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 80\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const json = pm.response.json();",
+              "pm.test('Withdrawal created', function () {",
+              "  pm.expect(json).to.have.property('withdrawal');",
+              "  pm.expect(json.withdrawal).to.have.property('status');",
+              "  pm.expect(json.withdrawal.status).to.eql('PENDING');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2b) POST create-speed-payment (auto — adjust BTC/USDT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{speedPaymentAmountUsdt}},\n  \"currency\": \"USDT\",\n  \"target_currency\": \"USDT\",\n  \"payment_methods\": [\"lightning\"],\n  \"metadata\": {\n    \"user_id\": \"{{userId}}\"\n  },\n  \"speed_wallet_address\": \"{{speedAddress}}\",\n  \"baseAmount\": {{speedPaymentAmountBtc}}\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals/create-speed-payment"
+      }
+    },
+    {
+      "name": "3) POST create withdrawal - below min BTC (expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 0.0000001,\n  \"amountNumeric\": 10\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 400', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) POST create withdrawal - invalid Speed address (expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"invalid-address\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 80\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 400', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5) POST create withdrawal - amountNumeric below 0.5 (expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 0.4\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 400', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6) POST create withdrawal - exceeds mined/deposit (expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 5,\n  \"amountNumeric\": 500000\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 400', function () {",
+              "  pm.response.to.have.status(400);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7) POST create withdrawal - duplicate pending (expect 409)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 80\n}\n"
+        },
+        "url": "{{baseUrl}}/api/withdrawals"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 409 if already pending', function () {",
+              "  pm.expect([201, 409]).to.include(pm.response.code);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8) GET user withdrawals",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-12345678" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "url": "{{baseUrl}}/api/withdrawals/user/{{userId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "pm.test('Returns array', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(Array.isArray(json)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('userId')) {",
+          "  console.warn('Set environment variable userId before running this collection.');",
+          "}",
+          "if (!pm.environment.get('speedAddress')) {",
+          "  console.warn('Set environment variable speedAddress (example: alice@speed.app).');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://dashboard.bitplaypro.com" },
+    { "key": "userId", "value": "69f974ca88ca0fdc966e23a4" },
+    { "key": "speedAddress", "value": "srjahir32@speed.app" },
+    { "key": "speedPaymentAmountBtc", "value": "0.0008" },
+    { "key": "speedPaymentAmountUsdt", "value": "80" }
+  ]
+
+}

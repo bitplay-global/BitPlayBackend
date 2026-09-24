@@ -1,0 +1,381 @@
+Connected: ac-gg3joc2-shard-00-01.gzkzosz.mongodb.net
+
+Threshold: balances.BTC > 0.00001000 (0.00001)
+Matching BalanceHistory documents: 23
+Unique users (`user` field): 20
+Unique firebase_uid (rows above threshold with firebase_uid set): 0
+
+
+--- All matching BalanceHistory rows (newest date first) ---
+
+[
+  {
+    "_id": "69f908e8b26d7c2c5f02edf4",
+    "user": "69eb31c19b714a692c57ece6",
+    "firebase_uid": null,
+    "date": "2026-05-04T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000020225958060182",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-05-04T21:00:24.152Z",
+    "updatedAt": "2026-05-05T06:20:01.406Z"
+  },
+  {
+    "_id": "69f819ca39549ca70d9bfca0",
+    "user": "69f0c4ce9b714a692c587bf4",
+    "firebase_uid": null,
+    "date": "2026-05-03T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.9000000008745151",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-05-04T04:00:10.157Z",
+    "updatedAt": "2026-05-05T06:20:25.548Z"
+  },
+  {
+    "_id": "69f4254d39549ca70d9beaaa",
+    "user": "69f1bd819b714a692c588d33",
+    "firebase_uid": null,
+    "date": "2026-04-30T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00002859087418614",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-05-01T04:00:13.800Z",
+    "updatedAt": "2026-05-05T06:20:27.924Z"
+  },
+  {
+    "_id": "69f4254b39549ca70d9beaa7",
+    "user": "69f09c2a9b714a692c58798c",
+    "firebase_uid": null,
+    "date": "2026-04-30T00:00:00.000Z",
+    "balances": {
+      "BTC": "33.622463278730216",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-05-01T04:00:11.894Z",
+    "updatedAt": "2026-05-05T06:20:25.304Z"
+  },
+  {
+    "_id": "69f3b4c239549ca70d9be989",
+    "user": "69a2e3c79b714a692c57016b",
+    "firebase_uid": null,
+    "date": "2026-04-30T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.0003157509844091997",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-04-30T20:00:02.152Z",
+    "updatedAt": "2026-05-05T06:19:19.157Z"
+  },
+  {
+    "_id": "69ee6ec9b620468942bfaae4",
+    "user": "69ea3f999b714a692c57c225",
+    "firebase_uid": null,
+    "date": "2026-04-26T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.0013382346199283602",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-04-26T20:00:09.822Z",
+    "updatedAt": "2026-04-26T20:00:09.822Z"
+  },
+  {
+    "_id": "69e670be00992082588d0b2c",
+    "user": "69ce8eea9b714a692c57185b",
+    "firebase_uid": null,
+    "date": "2026-04-21T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00036930422984",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-04-20T18:30:22.113Z",
+    "updatedAt": "2026-04-20T18:30:22.113Z"
+  },
+  {
+    "_id": "69e3b89100992082588cc3d2",
+    "user": "69860534f7ae9d1d478c5e28",
+    "firebase_uid": null,
+    "date": "2026-04-18T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000013461001383830002",
+      "BNB": null,
+      "USDT": null,
+      "USDC": null,
+      "LTC": null
+    },
+    "createdAt": "2026-04-18T17:00:01.595Z",
+    "updatedAt": "2026-04-18T17:00:01.595Z"
+  },
+  {
+    "_id": "69cff33a00992082588b13ae",
+    "user": "69860534f7ae9d1d478c5e28",
+    "firebase_uid": null,
+    "date": "2026-04-04T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000020434672775999998",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-04-03T17:04:58.847Z",
+    "updatedAt": "2026-04-04T20:02:40.588Z"
+  },
+  {
+    "_id": "69ac89cdf8eda22c89e0348d",
+    "user": "69ac7f4a9b714a692c5708bd",
+    "firebase_uid": null,
+    "date": "2026-03-09T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000029853347676499997",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-03-07T20:25:49.393Z",
+    "updatedAt": "2026-03-09T20:04:17.132Z"
+  },
+  {
+    "_id": "69a0b328f8eda22c89df66df",
+    "user": "69927971f7ae9d1d478c6dbe",
+    "firebase_uid": null,
+    "date": "2026-02-27T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00001563260496",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-02-26T20:55:04.521Z",
+    "updatedAt": "2026-02-26T20:55:04.521Z"
+  },
+  {
+    "_id": "699cbaf11884fbb82d061bd2",
+    "user": "6993c28ef7ae9d1d478c6edf",
+    "firebase_uid": null,
+    "date": "2026-02-24T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00002489195500399996",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-02-23T20:39:13.438Z",
+    "updatedAt": "2026-02-24T20:03:22.019Z"
+  },
+  {
+    "_id": "699b8b341884fbb82d0609e8",
+    "user": "6993c28ef7ae9d1d478c6edf",
+    "firebase_uid": null,
+    "date": "2026-02-23T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.0000388308932335",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-02-22T23:03:16.233Z",
+    "updatedAt": "2026-02-23T20:03:22.308Z"
+  },
+  {
+    "_id": "698d49016298e126fb3c44cf",
+    "user": "697410d72bd062dc585cb705",
+    "firebase_uid": null,
+    "date": "2026-02-11T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00001764504",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-02-12T03:29:05.781Z",
+    "updatedAt": "2026-02-12T03:29:05.781Z"
+  },
+  {
+    "_id": "697257f2e8177dd8d5edaf06",
+    "user": "69712cd32bd062dc585cb48c",
+    "firebase_uid": null,
+    "date": "2026-01-22T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000069176156336",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-01-22T17:01:38.275Z",
+    "updatedAt": "2026-01-22T17:01:38.275Z"
+  },
+  {
+    "_id": "696bcf77c8ffcef16b0e76a1",
+    "user": "696b85312bd062dc585cb06b",
+    "firebase_uid": null,
+    "date": "2026-01-17T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00037692937692899997",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-01-17T18:05:43.217Z",
+    "updatedAt": "2026-01-17T18:05:43.217Z"
+  },
+  {
+    "_id": "696bce2bc8ffcef16b0e76a0",
+    "user": "696b80ad2bd062dc585cb05f",
+    "firebase_uid": null,
+    "date": "2026-01-17T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.0000316625083425",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2026-01-17T18:00:11.347Z",
+    "updatedAt": "2026-01-17T18:00:11.347Z"
+  },
+  {
+    "_id": "693f802671908162cb9247de",
+    "user": "687e07754389334010741ff8",
+    "firebase_uid": null,
+    "date": "2025-12-14T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.0002357185789989",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2025-12-15T03:27:34.591Z",
+    "updatedAt": "2025-12-15T03:27:34.591Z"
+  },
+  {
+    "_id": "693d634a71908162cb9243b3",
+    "user": "687e07754389334010741ff8",
+    "firebase_uid": null,
+    "date": "2025-12-12T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.00002460401568",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2025-12-13T12:59:54.043Z",
+    "updatedAt": "2025-12-13T12:59:54.043Z"
+  },
+  {
+    "_id": "68f42a085244be893f13f500",
+    "user": "68e13dec9ae99292dd3a8331",
+    "firebase_uid": null,
+    "date": "2025-10-19T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000011404800000000001",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2025-10-19T00:00:08.110Z",
+    "updatedAt": "2025-10-19T00:00:08.110Z"
+  },
+  {
+    "_id": "68f42a0a5244be893f13f50c",
+    "user": "68f3b8414c6a2f6c5835d697",
+    "firebase_uid": null,
+    "date": "2025-10-19T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000011546088035999998",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2025-10-19T00:00:10.727Z",
+    "updatedAt": "2025-10-19T00:00:10.727Z"
+  },
+  {
+    "_id": "68f42a085244be893f13f503",
+    "user": "68de0e409ae99292dd3a829a",
+    "firebase_uid": null,
+    "date": "2025-10-19T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000013958633769999999",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2025-10-19T00:00:08.762Z",
+    "updatedAt": "2025-10-19T00:00:08.762Z"
+  },
+  {
+    "_id": "68f42a085244be893f13f502",
+    "user": "68db253f73b16c69e22f2c63",
+    "firebase_uid": null,
+    "date": "2025-10-19T00:00:00.000Z",
+    "balances": {
+      "BTC": "0.000011687531662",
+      "BNB": "0",
+      "USDT": "0",
+      "USDC": "0",
+      "LTC": "0"
+    },
+    "createdAt": "2025-10-19T00:00:08.546Z",
+    "updatedAt": "2025-10-19T00:00:08.546Z"
+  }
+]
+
+User IDs (`user` field, affected rows above threshold):
+687e07754389334010741ff8
+68db253f73b16c69e22f2c63
+68de0e409ae99292dd3a829a
+68e13dec9ae99292dd3a8331
+68f3b8414c6a2f6c5835d697
+696b80ad2bd062dc585cb05f
+696b85312bd062dc585cb06b
+69712cd32bd062dc585cb48c
+697410d72bd062dc585cb705
+69860534f7ae9d1d478c5e28
+69927971f7ae9d1d478c6dbe
+6993c28ef7ae9d1d478c6edf
+69a2e3c79b714a692c57016b
+69ac7f4a9b714a692c5708bd
+69ce8eea9b714a692c57185b
+69ea3f999b714a692c57c225
+69eb31c19b714a692c57ece6
+69f09c2a9b714a692c58798c
+69f0c4ce9b714a692c587bf4
+69f1bd819b714a692c588d33
+
+Dry-run only. Re-run with --apply --delete or --apply --zero-btc to write.

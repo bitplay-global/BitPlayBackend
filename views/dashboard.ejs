@@ -1,0 +1,244 @@
+<%- include('partials/header', { title }) %>
+  <%- include('partials/sidebar', { user }) %>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <div class="main-content">
+      <main class="page-content">
+        <!-- Filter: Date range -->
+        <div class="dashboard-filter card-container mb-4">
+          <div class="cards p-4">
+            <h3 class="text-white mb-3"><i class="fas fa-filter me-2"></i>Date range</h3>
+            <form method="get" action="/admin/dashboard" class="row g-3 align-items-end flex-wrap" <%=typeof rangeAll
+              !=='undefined' && rangeAll ? 'data-range-all="true"' : '' %>>
+              <div class="col-auto">
+                <label class="form-label text-white small mb-0">From</label>
+                <input type="date" name="startDate"
+                  class="form-control form-control-sm bg-dark text-light border-secondary"
+                  value="<%= typeof filterStart !== 'undefined' ? filterStart : '' %>">
+              </div>
+              <div class="col-auto">
+                <label class="form-label text-white small mb-0">To</label>
+                <input type="date" name="endDate"
+                  class="form-control form-control-sm bg-dark text-light border-secondary"
+                  value="<%= typeof filterEnd !== 'undefined' ? filterEnd : '' %>">
+              </div>
+              <div class="col-auto d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Reset</a>
+                <a href="/admin/dashboard?range=all"
+                  class="btn btn-outline-light btn-sm <%= typeof rangeAll !== 'undefined' && rangeAll ? 'active' : '' %>">All
+                  time</a>
+                <!-- <button type="button" data-preset-days="7" class="btn btn-outline-light btn-sm">Last 7 days</button>
+                <button type="button" data-preset-days="30" class="btn btn-outline-light btn-sm">Last 30 days</button>
+                <button type="button" data-preset-days="90" class="btn btn-outline-light btn-sm">Last 90 days</button> -->
+              </div>
+            </form>
+            <p class="text-muted small mt-2 mb-0">Revenue, IAP, and withdrawals below are calculated for the selected
+              range. Chart shows IAP by month in range.</p>
+          </div>
+        </div>
+
+        <!-- First row: 3 columns only -->
+        <div class="stats-grid stats-grid-row-3 mb-4">
+          <div class="stat-card revenue">
+            <div class="stat-info">
+              <h3>Total Revenue <i class="fas fa-dollar-sign cards-icon"></i></h3>
+              <p class="stat-value">$<%= (typeof data !=='undefined' && data.totalRevenue !=null) ?
+                  Number(data.totalRevenue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2
+                  }) : '0.00' %>
+              </p>
+              <span class="stat-change positive">IAP + AdMob</span>
+            </div>
+          </div>
+          <div class="stat-card withdrawals">
+            <div class="stat-info">
+              <h3>Total Withdrawals <i class="fas fa-money-bill-wave cards-icon"></i></h3>
+              <p class="stat-value">$<%= (typeof data !=='undefined' && data.totalWithdrawals !=null) ?
+                  Number(data.totalWithdrawals).toLocaleString('en-US', { minimumFractionDigits: 2,
+                  maximumFractionDigits: 2 }) : '0.00' %>
+              </p>
+              <span class="stat-change">Paid out (in range)</span>
+            </div>
+          </div>
+          <div class="stat-card iap">
+            <div class="stat-info">
+              <h3>IAP Total <i class="fas fa-shopping-cart cards-icon"></i></h3>
+              <p class="stat-value">$<%= (typeof data !=='undefined' && data.purchaseTotal !=null) ?
+                  Number(data.purchaseTotal).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits:
+                  2 }) : '0.00' %>
+              </p>
+              <span class="stat-change">In-app purchases in USD (in range)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Second row: Users, Support (no Transactions) -->
+        <div class="stats-grid mb-4">
+          <div class="stat-card users">
+            <div class="stat-info">
+              <h3>Users <i class="fas fa-users cards-icon"></i></h3>
+              <p class="stat-value">
+                <%= usersCount !=null ? usersCount : 0 %>
+              </p>
+              <span class="stat-change positive">
+                <%= users_diff !=null ? users_diff : '0' %>
+              </span>
+            </div>
+          </div>
+          <div class="stat-card support">
+            <div class="stat-info">
+              <h3>Support Tickets <i class="fas fa-headset cards-icon"></i></h3>
+              <p class="stat-value">
+                <%= supportTicketsCount !=null ? supportTicketsCount : 0 %>
+              </p>
+              <span class="stat-change positive">
+                <%= supportTicketsDiff !=null ? supportTicketsDiff : '0' %>
+              </span>
+            </div>
+          </div>
+          <div class="stat-card admob">
+            <div class="stat-info">
+              <h3>AdMob <i class="fab fa-apple cards-icon"></i></h3>
+              <% var admobCur=(typeof data !=='undefined' && data.admobCurrencyCode) ? data.admobCurrencyCode : 'USD' ;
+                var admobUsd=(typeof data !=='undefined' && data.admobRevenueTotalUsd !=null) ?
+                Number(data.admobRevenueTotalUsd).toLocaleString('en-US', { minimumFractionDigits: 2,
+                maximumFractionDigits: 2 }) : '0.00' ; var admobOrig=(typeof data !=='undefined' &&
+                data.admobRevenueTotal !=null) ? Number(data.admobRevenueTotal).toLocaleString('en-US', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00' ; %>
+                <p class="stat-value">$<%= admobUsd %>
+                </p>
+                <% if (admobCur !=='USD' ) { %>
+                  <p class="admob-original-currency text-muted small mb-0 mt-1" style="font-size: 0.75rem;">
+                    <%= admobOrig %>
+                      <%= admobCur %>
+                  </p>
+                  <% } else { %>
+                    <p class="admob-original-currency text-muted small mb-0 mt-1"
+                      style="font-size: 0.75rem; display: none;"></p>
+                    <% } %>
+                      <span class="stat-change">iOS + Android<%= admobCur !=='USD' ? ' (≈ USD)' : '' %></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Withdrawals table -->
+        <div class="card-container mb-4">
+          <div class="cards">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <h3 class="text-white mb-0"><i class="fas fa-money-bill-wave me-2"></i>Withdrawals</h3>
+              <a href="/admin/withdrawals" class="btn btn-sm btn-outline-primary">View all</a>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-dark table-striped table-hover align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Asset</th>
+                    <th>Amount</th>
+                    <th>To (address)</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% const withdrawals=(typeof data !=='undefined' && data.recentWithdrawals &&
+                    data.recentWithdrawals.length) ? data.recentWithdrawals : []; %>
+                    <% if (withdrawals.length===0) { %>
+                      <tr>
+                        <td colspan="6" class="text-muted">No withdrawals in selected range</td>
+                      </tr>
+                      <% } else { %>
+                        <% withdrawals.forEach(function(w, i) { %>
+                          <tr>
+                            <td>
+                              <%= i + 1 %>
+                            </td>
+                            <td>
+                              <%= w.asset || '-' %>
+                            </td>
+                            <td>$<%= Number(w.amountNumeric).toFixed(2) %>
+                            </td>
+                            <td>
+                              <%= w.toAddress ? String(w.toAddress).slice(0, 14) + '…' : '-' %>
+                            </td>
+                            <td>
+                              <%= w.status || '-' %>
+                            </td>
+                            <td>
+                              <%= w.created_at ? new Date(w.created_at).toLocaleString() : '-' %>
+                            </td>
+                          </tr>
+                          <% }); %>
+                            <% } %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Revenue chart (IAP by month in range) -->
+        <!-- <div class="chart-container mb-4">
+          <div class="chart-header">
+            <h3>Revenue – IAP by month</h3>
+          </div>
+          <canvas id="performanceChart"></canvas>
+        </div> -->
+      </main>
+    </div>
+
+    <script>
+      (function () {
+        var chartLabels = <% - JSON.stringify((typeof data !== 'undefined' && data.chartLabels && data.chartLabels.length) ? data.chartLabels : ['No data']) %>;
+        var chartData = <% - JSON.stringify((typeof data !== 'undefined' && data.chartData && data.chartData.length) ? data.chartData : [0]) %>;
+        var ctx = document.getElementById('performanceChart');
+        if (ctx) {
+          new Chart(ctx.getContext('2d'), {
+            type: 'line',
+            data: {
+              labels: chartLabels,
+              datasets: [{
+                label: 'IAP Revenue',
+                data: chartData,
+                borderColor: '#8B5CF6',
+                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                fill: true,
+                tension: 0.4
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              layout: { padding: { bottom: 30 } },
+              scales: {
+                y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: '#9CA3AF' } },
+                x: { grid: { color: 'rgba(255, 255, 255, 0.1)' }, ticks: { color: '#9CA3AF' } }
+              }
+            }
+          });
+        }
+      })();
+
+      // Preset buttons: set start/end and submit
+      (function () {
+        var form = document.querySelector('form[action="/admin/dashboard"]');
+        if (!form) return;
+        var startInput = form.querySelector('input[name="startDate"]');
+        var endInput = form.querySelector('input[name="endDate"]');
+        form.querySelectorAll('button[data-preset-days]').forEach(function (btn) {
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            var days = parseInt(btn.getAttribute('data-preset-days'), 10);
+            var end = new Date();
+            var start = new Date(end);
+            start.setDate(start.getDate() - days);
+            startInput.value = start.toISOString().slice(0, 10);
+            endInput.value = end.toISOString().slice(0, 10);
+            form.submit();
+          });
+        });
+      })();
+    </script>
+
+    <%- include('partials/footer') %>

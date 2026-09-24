@@ -1,0 +1,139 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+
+    <div id="loading" style="display: none;">Searching...</div>
+
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header d-flex align-items-center">
+                <h2>User Subscriptions</h2>
+
+                <div class="right-aligned-tableheader">
+                    <input
+                        type="text"
+                        id="subscriptionSearch"
+                        class="form-control"
+                        placeholder="Search subscriptions..."
+                        value="<%= query || '' %>"
+                        style="max-width: 250px;"
+                    />
+                </div>
+            </div>
+
+            <div class="table-responsive data-table" id="subscriptionsTableContainer">
+                <table class="table table-striped table-hover table-bordered align-middle">
+                    <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>User Name</th>
+                        <th>Email</th>
+                        <th>Crypto</th>
+                        <th>Chain</th>
+                        <th>Amount ($)</th>
+                        <th>Amount (Crypto)</th>
+                        <th>Paid</th>
+                        <th>Plan Name</th>
+                        <th>Hashrate</th>
+                        <th>Duration (Months)</th>
+                        <th>Plan Cost ($)</th>
+                    </tr>
+                    </thead>
+                    <tbody id="subscriptionsTbody">
+                        <% UserSubs.forEach(function(sub, index) { %>
+                        <tr data-id="<%= sub._id %>">
+                            <td><%= (page - 1) * limit + index + 1 %></td>
+                            <td><%= (sub.user && (sub.user.name || sub.user.displayName)) ? (sub.user.name || sub.user.displayName) : (sub.user && sub.user._id ? String(sub.user._id) : '-') %></td>
+                            <td><%= sub.user && sub.user.email ? sub.user.email : '-' %></td>
+                            <td><%= sub.crypto || '-' %></td>
+                            <td><%= sub.chain || '-' %></td>
+                            <td>$<%= sub.amount != null ? Number(sub.amount).toFixed(2) : '-' %></td>
+                            <td><%= sub.amount_crypto != null ? Number(sub.amount_crypto) : '0' %></td>
+                            <td><%= sub.paid ? 'Yes' : 'No' %></td>
+                            <td><%= sub.plan && sub.plan.name ? sub.plan.name : '-' %></td>
+                            <td><%= sub.plan && sub.plan.hashrate != null ? sub.plan.hashrate + (sub.plan.unit || ' GH/s') : (sub.hashrate != null ? sub.hashrate + ' GH/s' : '-') %></td>
+                            <td><%= sub.plan && sub.plan.duration != null ? sub.plan.duration : (sub.duration != null ? sub.duration : '-') %></td>
+                            <td><%= sub.plan && sub.plan.plan_cost != null ? ('$' + Number(sub.plan.plan_cost).toFixed(2)) : '-' %></td>
+                        </tr>
+                    <% }) %>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination mt-3">
+            <% if (page > 1) { %>
+                <a href="?page=<%= page - 1 %><%= query ? '&q=' + encodeURIComponent(query) : '' %>" class="btn btn-outline-primary me-2">&laquo; Prev</a>
+            <% } %>
+            <span>Page <%= page %></span>
+            <% if (UserSubs.length === limit) { %>
+                <a href="?page=<%= page + 1 %><%= query ? '&q=' + encodeURIComponent(query) : '' %>" class="btn btn-outline-primary ms-2">Next &raquo;</a>
+            <% } %>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('subscriptionSearch');
+        const subscriptionsTbody = document.getElementById('subscriptionsTbody');
+
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+
+            searchTimeout = setTimeout(async () => {
+                const query = searchInput.value.trim();
+                document.getElementById('loading').style.display = 'block';
+
+                try {
+                    const response = await fetch(`/admin/usersubscriptions?q=${encodeURIComponent(query)}&page=1`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+
+                    const data = await response.json();
+                    subscriptionsTbody.innerHTML = '';
+
+                    if (data.UserSubs.length === 0) {
+                        subscriptionsTbody.innerHTML = '<tr><td colspan="11">No subscriptions found</td></tr>';
+                        return;
+                    }
+
+                    data.UserSubs.forEach((sub, index) => {
+                        const userName = (sub.user && (sub.user.name || sub.user.displayName)) ? (sub.user.name || sub.user.displayName) : (sub.user && sub.user._id ? String(sub.user._id) : '-');
+                        const userEmail = (sub.user && sub.user.email) ? sub.user.email : '-';
+                        const amountStr = sub.amount != null ? '$' + Number(sub.amount).toFixed(2) : '-';
+                        const amountCrypto = sub.amount_crypto != null ? sub.amount_crypto : '0';
+                        const planName = (sub.plan && sub.plan.name) ? sub.plan.name : '-';
+                        const hashrateStr = (sub.plan && sub.plan.hashrate != null) ? sub.plan.hashrate + (sub.plan.unit || ' GH/s') : (sub.hashrate != null ? sub.hashrate + ' GH/s' : '-');
+                        const durationStr = (sub.plan && sub.plan.duration != null) ? sub.plan.duration : (sub.duration != null ? sub.duration : '-');
+                        const planCostStr = (sub.plan && sub.plan.plan_cost != null) ? ('$' + Number(sub.plan.plan_cost).toFixed(2)) : '-';
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-id', sub._id);
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${userName}</td>
+                            <td>${userEmail}</td>
+                            <td>${sub.crypto || '-'}</td>
+                            <td>${sub.chain || '-'}</td>
+                            <td>${amountStr}</td>
+                            <td>${amountCrypto}</td>
+                            <td>${sub.paid ? 'Yes' : 'No'}</td>
+                            <td>${planName}</td>
+                            <td>${hashrateStr}</td>
+                            <td>${durationStr}</td>
+                            <td>${planCostStr}</td>
+                        `;
+                        subscriptionsTbody.appendChild(row);
+                    });
+
+                } catch (err) {
+                    console.error('Search failed:', err);
+                } finally {
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 300);
+        });
+    </script>
+
+    <%- include('partials/footer') %>

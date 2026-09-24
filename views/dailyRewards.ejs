@@ -1,0 +1,120 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+  <div class="card-container">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h2>Daily Rewards</h2>
+      <div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createRewardModal">+ Add Reward</button>
+      </div>
+    </div>
+
+    <div class="table-responsive data-table">
+      <table class="table table-striped table-bordered align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Day</th>
+            <th>Recurring</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Created At</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="rewardsTbody">
+          <% rewards.forEach((reward, index) => { %>
+            <tr data-id="<%= reward._id %>">
+              <td><%= (page - 1) * limit + index + 1 %></td>
+              <td><%= reward.isRecurring ? '-' : reward.day %></td>
+              <td><%= reward.isRecurring ? 'Yes' : 'No' %></td>
+              <td><%= reward.rewardType %></td>
+              <td><%= reward.amount %></td>
+              <td><%= new Date(reward.createdAt).toLocaleDateString() %></td>
+              <td>
+                <button class="btn btn-sm btn-danger delete-reward-btn">🗑</button>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination mt-3">
+      <% if (page > 1) { %>
+        <a href="?page=<%= page - 1 %>" class="btn btn-outline-primary me-2">Prev</a>
+      <% } %>
+      <span>Page <%= page %></span>
+      <% if (rewards.length === limit) { %>
+        <a href="?page=<%= page + 1 %>" class="btn btn-outline-primary ms-2">Next</a>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<!-- Create Modal -->
+<div class="modal fade" id="createRewardModal" tabindex="-1" aria-labelledby="rewardModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" action="/api/daily-rewards/create" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Daily Reward</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label>Day (leave empty if recurring)</label>
+          <input name="day" type="number" class="form-control" />
+        </div>
+        <div class="mb-3">
+          <label>Recurring?</label>
+          <select name="isRecurring" class="form-control">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label>Reward Type</label>
+          <input name="rewardType" class="form-control" placeholder="btc / hashpower / item" required />
+        </div>
+        <div class="mb-3">
+          <label>Amount</label>
+          <input name="amount" type="number" class="form-control" required />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const rewardsTbody = document.getElementById('rewardsTbody');
+
+  function attachDeleteHandlers() {
+    document.querySelectorAll('.delete-reward-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = btn.closest('tr');
+        const id = row.dataset.id;
+
+        if (!confirm('Delete this reward?')) return;
+
+        const res = await fetch(`/api/daily-rewards/${id}`, {
+          method: 'DELETE'
+        });
+
+        if (res.ok) {
+          row.remove();
+        } else {
+          alert('Failed to delete');
+        }
+      });
+    });
+  }
+
+  attachDeleteHandlers();
+</script>
+
+<%- include('partials/footer') %>

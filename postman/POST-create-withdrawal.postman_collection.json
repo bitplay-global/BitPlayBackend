@@ -1,0 +1,87 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-create-withdrawal-post",
+    "name": "POST /api/withdrawals — create withdrawal",
+    "description": "Withdrawal-related POST routes in `routes/api_routes/withdrawal_routes.js` (mounted at `/api/withdrawals`).\n\n---\n### 1) `POST {{baseUrl}}/api/withdrawals` (mobile create)\n\n**JSON body (required):**\n- `userId` — Mongo user id\n- `toAddress` — Speed Lightning address: `localpart@speed.app`\n- `amountNumeric` — USDT notional for Speed (must be ≥ **0.5**)\n- `amountBtc` — BTC amount to withdraw (from **BTC_DEPOSIT + mined BTC** logic); must be within server min/max from `GET /api/withdrawals/limits`\n\n**Behavior:** mined/deposit checks, 15% BTC/USDT consistency when price available; duplicate **PENDING** → **409**.\n\n---\n### 2) `POST {{baseUrl}}/api/withdrawals/create-speed-payment` (auto Speed send)\n\n**JSON body:**\n- `amount` — required; USDT amount sent to Speed (`target_currency`)\n- `metadata.user_id` — required\n- `speed_wallet_address` — required; valid `name@speed.app`\n- `baseAmount` **or** `defaultAmountNumeric` — required positive BTC deducted from **BTC_DEPOSIT** only\n- Optional: `currency`, `target_currency` (default USDT), `payment_methods`\n\n**Behavior:** deducts `BTC_DEPOSIT`, creates withdrawal with `balanceDeducted: true`, calls Speed `/send`; on API failure stays **PENDING** for admin approve; duplicate **PENDING** → **409**.\n\nSet collection variables before sending.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": { "type": "noauth" },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "userId", "value": "YOUR_USER_OBJECT_ID" },
+    { "key": "speedAddress", "value": "you@speed.app" },
+    { "key": "amountBtc", "value": "0.0008" },
+    { "key": "amountNumeric", "value": "80" }
+  ],
+  "item": [
+    {
+      "name": "POST create withdrawal",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-withdrawal-test" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": {{amountBtc}},\n  \"amountNumeric\": {{amountNumeric}}\n}\n"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "withdrawals"]
+        },
+        "description": "Success: **201** with `{ message, withdrawal }`. Adjust `amountBtc` and `amountNumeric` to your user’s balances and current BTC price (within 15%). Run `GET {{baseUrl}}/api/withdrawals/limits` first for min/max BTC."
+      },
+      "response": []
+    },
+    {
+      "name": "GET withdrawal limits (helper)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-withdrawal-test" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals/limits",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "withdrawals", "limits"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST create-speed-payment (auto Speed withdrawal)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-app-id", "value": "bitplay-mobile" },
+          { "key": "x-app-platform", "value": "ios" },
+          { "key": "x-app-version", "value": "1.0.0" },
+          { "key": "x-device-id", "value": "postman-withdrawal-test" },
+          { "key": "x-mobile-client", "value": "true" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{amountNumeric}},\n  \"currency\": \"USDT\",\n  \"target_currency\": \"USDT\",\n  \"payment_methods\": [\"lightning\"],\n  \"metadata\": {\n    \"user_id\": \"{{userId}}\"\n  },\n  \"speed_wallet_address\": \"{{speedAddress}}\",\n  \"baseAmount\": {{amountBtc}}\n}\n"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals/create-speed-payment",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "withdrawals", "create-speed-payment"]
+        },
+        "description": "Success: **200** with `{ status, withdrawal_id, balance_deducted, remaining_btc_deposit, withdrawal }`. Requires sufficient **BTC_DEPOSIT** for `baseAmount` (or use `defaultAmountNumeric` instead of `baseAmount` in the body). **Warning:** calls live Speed API if configured — use test amounts and a controlled wallet."
+      },
+      "response": []
+    }
+  ]
+}

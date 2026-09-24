@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> - DashPro Admin</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>DashPro</h2>
+            </div>
+            <ul class="sidebar-menu">
+                <li>
+                    <a href="/dashboard">
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/users">
+                        <i class="fas fa-users"></i>
+                        <span>Users</span>
+                    </a>
+                </li>
+                <li class="active">
+                    <a href="/transactions">
+                        <i class="fas fa-credit-card"></i>
+                        <span>Transactions</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/support">
+                        <i class="fas fa-headset"></i>
+                        <span>Support</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/settings">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                        <span>Logout</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1>Transactions</h1>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search transactions...">
+                    </div>
+                    <div class="user-info">
+                        <i class="fas fa-user-circle"></i>
+                        <span>Hello, <%= user %>!</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Transactions Content -->
+            <main class="page-content">
+                <% if (typeof error !== 'undefined' && error) { %>
+                <div class="error-message">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <%= error %>
+                </div>
+                <% } %>
+
+                <div class="transactions-container">
+                    <div class="transactions-header">
+                        <h3>All Transactions</h3>
+                        <div class="transactions-filters">
+                            <select class="filter-select">
+                                <option value="all">All Types</option>
+                                <option value="deposit">Deposits</option>
+                                <option value="withdrawal">Withdrawals</option>
+                                <option value="payment">Payments</option>
+                            </select>
+                            <select class="filter-select">
+                                <option value="all">All Status</option>
+                                <option value="completed">Completed</option>
+                                <option value="pending">Pending</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-download"></i>
+                                Export
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="transactions-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Transaction ID</th>
+                                    <th>User</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (transactions && transactions.length > 0) { %>
+                                    <% transactions.forEach(function(transaction) { %>
+                                    <tr>
+                                        <td><%= transaction.id %></td>
+                                        <td><%= transaction.user %></td>
+                                        <td>
+                                            <span class="transaction-type <%= transaction.type %>">
+                                                <%= transaction.type %>
+                                            </span>
+                                        </td>
+                                        <td class="amount <%= transaction.amount > 0 ? 'positive' : 'negative' %>">
+                                            $<%= Math.abs(transaction.amount).toFixed(2) %>
+                                        </td>
+                                        <td>
+                                            <span class="status <%= transaction.status %>">
+                                                <%= transaction.status %>
+                                            </span>
+                                        </td>
+                                        <td><%= new Date(transaction.date).toLocaleDateString() %></td>
+                                        <td>
+                                            <div class="action-buttons">
+                                                <button class="btn-action view" onclick="viewTransaction('<%= transaction.id %>')">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="btn-action edit" onclick="editTransaction('<%= transaction.id %>')">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <% }); %>
+                                <% } else { %>
+                                    <!-- Sample data when no transactions -->
+                                    <tr>
+                                        <td>TXN001</td>
+                                        <td>John Doe</td>
+                                        <td><span class="transaction-type deposit">Deposit</span></td>
+                                        <td class="amount positive">$500.00</td>
+                                        <td><span class="status completed">Completed</span></td>
+                                        <td><%= new Date().toLocaleDateString() %></td>
+                                        <td>
+                                            <div class="action-buttons">
+                                                <button class="btn-action view">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="btn-action edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>TXN002</td>
+                                        <td>Jane Smith</td>
+                                        <td><span class="transaction-type withdrawal">Withdrawal</span></td>
+                                        <td class="amount negative">$200.00</td>
+                                        <td><span class="status pending">Pending</span></td>
+                                        <td><%= new Date().toLocaleDateString() %></td>
+                                        <td>
+                                            <div class="action-buttons">
+                                                <button class="btn-action view">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="btn-action edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="/js/script.js"></script>
+    <script>
+        function viewTransaction(transactionId) {
+            console.log('View transaction:', transactionId);
+        }
+
+        function editTransaction(transactionId) {
+            console.log('Edit transaction:', transactionId);
+        }
+    </script>
+</body>
+</html>

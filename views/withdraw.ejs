@@ -1,0 +1,278 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+  <div class="card-container">
+    <div id="withdrawalError" class="alert alert-danger alert-dismissible fade show mb-3" role="alert" style="display: none;">
+      <strong>Error:</strong> <span id="withdrawalErrorText"></span>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    <div id="speedAccountCard" class="card mb-3" style="display: none;">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <strong><i class="fas fa-wallet me-1"></i> Speed wallet (sending account)</strong>
+        <button type="button" class="btn-close btn-close-sm" aria-label="Close" id="speedAccountClose"></button>
+      </div>
+      <div class="card-body py-2 small">
+        <div id="speedAccountLoading" class="text-muted">Loading…</div>
+        <div id="speedAccountContent" style="display: none;">
+          <table class="table table-sm table-borderless mb-0">
+            <tr><td class="text-muted" style="width: 140px;">Mode</td><td id="speedMode"></td></tr>
+            <tr><td class="text-muted">API Key</td><td><code id="speedApiKeyMasked"></code></td></tr>
+            <tr id="speedBalanceRow"><td class="text-muted">Balance</td><td id="speedBalance"></td></tr>
+            <tr id="speedBalanceErrorRow" style="display: none;"><td class="text-muted">Balance</td><td class="text-warning" id="speedBalanceError"></td></tr>
+            <tr><td class="text-muted">Hint</td><td class="text-muted" id="speedHint"></td></tr>
+          </table>
+        </div>
+        <div id="speedAccountNotConfigured" style="display: none;" class="text-muted"></div>
+      </div>
+    </div>
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h2>Withdrawals</h2>
+      <form class="d-flex" method="GET" action="/admin/withdrawals">
+        <input type="text" name="search" class="form-control me-2" placeholder="Search by name, email, status, txHash" value="<%= typeof search !== 'undefined' ? search : '' %>" style="min-width: 220px;" />
+        <button type="submit" class="btn btn-outline-primary">Search</button>
+      </form>
+    </div>
+
+    <div class="table-responsive data-table">
+      <table class="table table-striped table-bordered align-middle">
+        <thead class="table-dark">
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Asset</th>
+            <th>Chain</th>
+            <th>To Address</th>
+            <th>Amount</th>
+            <th>User's Current Balance</th>
+            <th>Status</th>
+            <th>TxHash</th>
+            <th>Mobile Meta</th>
+            <th>Created At</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="withdrawalsTbody">
+          <% withdrawals.forEach((w, index) => { %>
+            <tr data-id="<%= w._id %>">
+              <td><%= (page - 1) * limit + index + 1 %></td>
+              <td><%= w.userName || '-' %></td>
+              <td><%= w.userEmail || '-' %></td>
+              <td><%= w.asset %></td>
+              <td><%= w.chain %></td>
+              <td class="text-nowrap">
+                <% const addr = (w.toAddress || '-'); const addrEsc = addr.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); %>
+                <span class="withdrawal-address" title="<%= addrEsc %>" data-address="<%= addrEsc %>" style="max-width: 160px; display: inline-block; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; cursor: pointer;" role="button" tabindex="0"><%= addr %></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary copy-address-btn ms-1" title="Copy address" data-address="<%= addrEsc %>" aria-label="Copy address">&nbsp;&#9100;&nbsp;</button>
+              </td>
+              <td class="<%= w.exceedsBalance ? 'text-danger fw-bold' : '' %>">
+                <%= w.displayAmount || '0' %> <%= w.asset %> / <%= w.displayBtc != null ? w.displayBtc + ' BTC' : '— BTC' %>
+                <% if (w.exceedsBalance) { %>
+                  <br><span class="badge bg-danger" title="Requested amount exceeds this user's current total balance — verify before approving">&#9888; EXCEEDS BALANCE</span>
+                <% } %>
+              </td>
+              <td>
+                <% if (w.userBalanceBtc != null) { %>
+                  <span title="Mined: <%= w.userBalanceMinedBtc %> BTC / Deposit: <%= w.userBalanceDepositBtc %> BTC"><%= w.userBalanceBtc %> BTC</span>
+                <% } else { %>
+                  <span class="text-muted">-</span>
+                <% } %>
+              </td>
+              <td><span class="badge bg-<%= w.status === 'PENDING' ? 'warning' : w.status === 'APPROVED' ? 'info' : w.status === 'SENT' ? 'primary' : w.status === 'CONFIRMED' ? 'success' : 'danger' %>"><%= w.status %></span></td>
+              <td><%= w.txHash || '-' %></td>
+              <td class="small">
+                <% if (w.mobileAccessMeta) { %>
+                  <% const metaSource = w.mobileAccessMeta.source || '-'; %>
+                  <% const metaValid = typeof w.mobileHeadersValid === 'boolean' ? String(w.mobileHeadersValid) : '-'; %>
+                  <% const metaPlatform = w.mobileAccessMeta.platform || '-'; %>
+                  <% const metaAppVersion = w.mobileAccessMeta.appVersion || '-'; %>
+                  <% const metaJson = JSON.stringify(w.mobileAccessMeta, null, 2); %>
+                  <% const metaValidClass = metaValid === 'true' ? 'is-true' : (metaValid === 'false' ? 'is-false' : ''); %>
+                  <div class="bp-meta" title="<%= metaJson %>">
+                    <span class="bp-meta-label">Source</span><span class="bp-meta-value"><%= metaSource %></span>
+                    <span class="bp-meta-label">Valid</span><span class="bp-meta-value <%= metaValidClass %>"><%= metaValid %></span>
+                    <span class="bp-meta-label">Platform</span><span class="bp-meta-value"><%= metaPlatform %></span>
+                    <span class="bp-meta-label">Version</span><span class="bp-meta-value"><%= metaAppVersion %></span>
+                  </div>
+                <% } else { %>
+                  <span class="text-muted">-</span>
+                <% } %>
+              </td>
+              <td><%= new Date(w.created_at).toLocaleDateString() %></td>
+              <td>
+                <% if (w.status === 'PENDING') { %>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-success approve-btn">Approve</button>
+                    <button class="btn btn-sm btn-danger reject-btn">Reject</button>
+                  </div>
+                <% } else { %>
+                  <span>-</span>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <nav class="bp-pagination mt-3" aria-label="Pagination">
+      <% if (page > 1) { %>
+        <a href="?page=<%= page - 1 %><%= typeof search !== 'undefined' && search ? '&search=' + encodeURIComponent(search) : '' %>" class="bp-pagination-btn" aria-label="Previous page"><i class="fas fa-chevron-left"></i></a>
+      <% } else { %>
+        <span class="bp-pagination-btn is-disabled" aria-hidden="true"><i class="fas fa-chevron-left"></i></span>
+      <% } %>
+      <span class="bp-pagination-page">Page <%= page %></span>
+      <% if (withdrawals.length === limit) { %>
+        <a href="?page=<%= page + 1 %><%= typeof search !== 'undefined' && search ? '&search=' + encodeURIComponent(search) : '' %>" class="bp-pagination-btn" aria-label="Next page"><i class="fas fa-chevron-right"></i></a>
+      <% } else { %>
+        <span class="bp-pagination-btn is-disabled" aria-hidden="true"><i class="fas fa-chevron-right"></i></span>
+      <% } %>
+    </nav>
+  </div>
+</div>
+
+<script>
+  (function() {
+    var card = document.getElementById('speedAccountCard');
+    var loading = document.getElementById('speedAccountLoading');
+    var content = document.getElementById('speedAccountContent');
+    var notConfigured = document.getElementById('speedAccountNotConfigured');
+    if (!card) return;
+    fetch('/api/withdrawals/speed-account', { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        card.style.display = '';
+        loading.style.display = 'none';
+        if (data.configured) {
+          content.style.display = 'block';
+          document.getElementById('speedMode').textContent = data.modeLabel || data.mode;
+          var maskedEl = document.getElementById('speedApiKeyMasked');
+          if (maskedEl) maskedEl.textContent = data.apiKeyMasked || '';
+          if (data.hint) document.getElementById('speedHint').textContent = data.hint;
+
+          var balanceRow = document.getElementById('speedBalanceRow');
+          var balanceErrRow = document.getElementById('speedBalanceErrorRow');
+          var balanceEl = document.getElementById('speedBalance');
+          var balanceErrEl = document.getElementById('speedBalanceError');
+          if (data.balanceError) {
+            balanceRow.style.display = 'none';
+            balanceErrRow.style.display = '';
+            if (balanceErrEl) balanceErrEl.textContent = data.balanceError;
+          } else if (data.balance && data.balance.length) {
+            balanceErrRow.style.display = 'none';
+            balanceRow.style.display = '';
+            balanceEl.innerHTML = data.balance.map(function(b) {
+              var cur = (b.target_currency || b.currency || '').toUpperCase();
+              var rawAmount = b.amount != null ? Number(b.amount) : 0;
+              // Speed API returns USDT/USDC in cents; SATS in whole sats
+              var amount = (cur === 'USDT' || cur === 'USDC') ? (rawAmount / 100).toFixed(2) : rawAmount;
+              return '<span class="me-3"><strong>' + cur + ' Balance:</strong> ' + amount + ' ' + cur + '</span>';
+            }).join('');
+          } else {
+            balanceErrRow.style.display = 'none';
+            balanceEl.textContent = 'No balance data';
+          }
+
+        } else {
+          notConfigured.style.display = 'block';
+          notConfigured.textContent = data.message || 'Speed API key not configured';
+        }
+      })
+      .catch(function() {
+        card.style.display = '';
+        loading.style.display = 'none';
+        notConfigured.style.display = 'block';
+        notConfigured.textContent = 'Could not load Speed account info';
+      });
+    var closeBtn = document.getElementById('speedAccountClose');
+    if (closeBtn) closeBtn.addEventListener('click', function() { card.style.display = 'none'; });
+  })();
+
+  document.querySelectorAll('.withdrawal-address, .copy-address-btn').forEach(el => {
+    el.addEventListener('click', function () {
+      const cell = this.closest('td');
+      const addrEl = cell.querySelector('[data-address]');
+      const addr = addrEl ? (addrEl.getAttribute('data-address') || '') : '';
+      if (!addr) return;
+      navigator.clipboard.writeText(addr).then(() => {
+        const btn = cell.querySelector('.copy-address-btn');
+        if (btn) {
+          const orig = btn.innerHTML;
+          btn.innerHTML = ' Copied! ';
+          btn.classList.add('text-success');
+          setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('text-success'); }, 1200);
+        }
+      }).catch(() => {});
+    });
+  });
+  function showWithdrawalError(message, details) {
+    var el = document.getElementById('withdrawalError');
+    var textEl = document.getElementById('withdrawalErrorText');
+    if (!el || !textEl) return;
+    var full = message || 'Something went wrong.';
+    if (details && String(details).trim()) full += ' ' + (typeof details === 'string' ? details : JSON.stringify(details));
+    textEl.textContent = full;
+    el.style.display = '';
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function hideWithdrawalError() {
+    var el = document.getElementById('withdrawalError');
+    if (el) el.style.display = 'none';
+  }
+
+  document.querySelectorAll('.approve-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      hideWithdrawalError();
+      var row = btn.closest('tr');
+      var id = row.dataset.id;
+      if (!confirm('Approve this withdrawal?')) return;
+      try {
+        var res = await fetch('/api/withdrawals/' + id + '/approve', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+        if (res.ok) { location.reload(); return; }
+        var msg = 'Failed to approve';
+        var details = '';
+        var text = await res.text();
+        try {
+          var data = text ? JSON.parse(text) : {};
+          msg = data.error || data.message || msg;
+          if (data.details != null) details = typeof data.details === 'string' ? data.details : JSON.stringify(data.details);
+        } catch (e) {
+          if (res.status >= 400) details = 'Status ' + res.status + (text ? ': ' + text.slice(0, 100) : '');
+        }
+        showWithdrawalError(msg, details);
+      } catch (err) {
+        showWithdrawalError('Request failed.', err.message || String(err));
+      }
+    });
+  });
+
+  document.querySelectorAll('.reject-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      hideWithdrawalError();
+      var row = btn.closest('tr');
+      var id = row.dataset.id;
+      if (!confirm('Reject this withdrawal?')) return;
+      try {
+        var res = await fetch('/api/withdrawals/' + id + '/reject', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
+        if (res.ok) { location.reload(); return; }
+        var msg = 'Failed to reject';
+        var details = '';
+        var text = await res.text();
+        try {
+          var data = text ? JSON.parse(text) : {};
+          msg = data.error || data.message || msg;
+          if (data.details != null) details = typeof data.details === 'string' ? data.details : JSON.stringify(data.details);
+        } catch (e) {
+          if (res.status >= 400) details = 'Status ' + res.status;
+        }
+        showWithdrawalError(msg, details);
+      } catch (err) {
+        showWithdrawalError('Request failed.', err.message || String(err));
+      }
+    });
+  });
+</script>
+
+<%- include('partials/footer') %>

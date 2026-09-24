@@ -1,0 +1,369 @@
+
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<style>
+/* Amount columns: show full value, no truncation */
+#usersTable {
+    table-layout: auto;
+}
+#usersTable .amount-cell {
+    white-space: nowrap;
+    min-width: 150px;
+    overflow: visible;
+    word-break: keep-all;
+    max-width: none;
+}
+#usersTableContainer {
+    overflow-x: auto;
+}
+
+.dropdown {
+    position: relative;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1000;
+    min-width: 160px;
+    padding: 0.5rem 0;
+    margin: 0;
+    background-color: #212529;
+    border: 1px solid #495057;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.375rem 1rem;
+    clear: both;
+    font-weight: 400;
+    color: #fff;
+    text-align: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+    background-color: transparent;
+    border: 0;
+}
+
+.dropdown-item:hover {
+    background-color: #495057;
+    color: #fff;
+}
+</style>
+
+<div class="main-content">
+
+    <div id="loading" style="display: none;">Searching...</div>
+
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h2 class="mb-0">Users List</h2>
+                <p class="text-muted small mb-0">
+                    Showing <%= total %> of <%= allTimeTotal %> total users<%= (typeof rangeAll !== 'undefined' && !rangeAll && (filterStart || filterEnd)) ? ' (filtered by signup date)' : '' %>
+                </p>
+            </div>
+            <input
+                type="text"
+                id="userSearch"
+                class="form-control"
+                placeholder="Search users..."
+                value="<%= searchQuery %>"
+                style="max-width: 250px;"
+            />
+            </div>
+
+            <form method="get" action="/admin/users" class="row g-3 align-items-end flex-wrap mb-3">
+                <input type="hidden" name="q" value="<%= searchQuery %>" />
+                <div class="col-auto">
+                    <label class="form-label small mb-0">Signed up from</label>
+                    <input type="date" name="startDate" class="form-control form-control-sm bg-dark text-light border-secondary" value="<%= filterStart %>">
+                </div>
+                <div class="col-auto">
+                    <label class="form-label small mb-0">to</label>
+                    <input type="date" name="endDate" class="form-control form-control-sm bg-dark text-light border-secondary" value="<%= filterEnd %>">
+                </div>
+                <div class="col-auto d-flex gap-2 flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                    <a href="/admin/users<%= searchQuery ? '?q=' + encodeURIComponent(searchQuery) : '' %>" class="btn btn-outline-secondary btn-sm">Reset</a>
+                    <a href="/admin/users?range=all<%= searchQuery ? '&q=' + encodeURIComponent(searchQuery) : '' %>" class="btn btn-outline-light btn-sm <%= rangeAll ? 'active' : '' %>">All time</a>
+                </div>
+            </form>
+
+            <div class="table-responsive data-table" id="usersTableContainer">
+            <table class="table table-dark table-striped table-hover table-bordered align-middle" id="usersTable">
+                <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Email Verified</th>
+                    <th>Status</th>
+                    <th class="amount-cell">Total BTC</th>
+                    <th>Total Referrals</th>
+                    <th class="amount-cell">Total Referral Rewards (BTC)</th>
+                    <th>Created At</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="usersTbody">
+                <% users.forEach((user, index) => { %>
+                    <tr>
+                    <td><%= (page - 1) * limit + index + 1 %></td>
+                    <td><%= user.name %></td>
+                    <td><%= user.email %></td>
+                    <td><%= user.emailVerified ? 'Yes' : 'No' %></td>
+                    <td>
+                        <%
+                        let statusColor = 'success';
+                        let statusText = user.status || (user.isActive ? 'active' : 'inactive');
+                        if (statusText === 'inactive') statusColor = 'warning';
+                        if (statusText === 'suspended') statusColor = 'danger';
+                        %>
+                        <span class="badge bg-<%= statusColor %>">
+                            <%= statusText.charAt(0).toUpperCase() + statusText.slice(1) %>
+                        </span>
+                    </td>
+                    <td class="amount-cell"><%= (user.totalBtc != null ? Number(user.totalBtc) : 0).toFixed(16) %></td>
+                    <td><%= user.referralCount != null ? user.referralCount : 0 %></td>
+                    <td class="amount-cell"><%= (user.totalReferralRewards != null ? Number(user.totalReferralRewards) : 0).toFixed(16) %></td>
+                    <td><%= new Date(user.createdAt).toLocaleDateString() %></td>
+                    <td>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" onclick="toggleDropdown(this)" id="dropdownMenuButton<%= index %>">
+                                <i class="fas fa-cog"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark" id="dropdownMenu<%= index %>" style="display: none;">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('<%= user._id %>', 'active')">
+                                    <i class="fas fa-check text-success me-2"></i>Set Active
+                                </a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('<%= user._id %>', 'inactive')">
+                                    <i class="fas fa-pause text-warning me-2"></i>Set Inactive
+                                </a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('<%= user._id %>', 'suspended')">
+                                    <i class="fas fa-ban text-danger me-2"></i>Suspend
+                                </a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="deleteUser('<%= user._id %>')">
+                                    <i class="fas fa-ban text-danger me-2"></i>Delete
+                                </a></li>
+                            </ul>
+                        </div>
+                    </td>
+                    </tr>
+                <% }) %>
+                </tbody>
+            </table>
+            </div>
+
+            <!-- Pagination -->
+            <% const pageExtraQS = (searchQuery ? '&q=' + encodeURIComponent(searchQuery) : '')
+                + (rangeAll ? '&range=all' : '')
+                + (filterStart ? '&startDate=' + encodeURIComponent(filterStart) : '')
+                + (filterEnd ? '&endDate=' + encodeURIComponent(filterEnd) : ''); %>
+            <nav class="bp-pagination mt-3" aria-label="Pagination">
+                <% if (page > 1) { %>
+                    <a href="?page=<%= page - 1 %><%= pageExtraQS %>" class="bp-pagination-btn" aria-label="Previous page"><i class="fas fa-chevron-left"></i></a>
+                <% } else { %>
+                    <span class="bp-pagination-btn is-disabled" aria-hidden="true"><i class="fas fa-chevron-left"></i></span>
+                <% } %>
+
+                <span class="bp-pagination-page">Page <%= page %></span>
+
+                <% if (users.length === limit) { %>
+                    <a href="?page=<%= page + 1 %><%= pageExtraQS %>" class="bp-pagination-btn" aria-label="Next page"><i class="fas fa-chevron-right"></i></a>
+                <% } else { %>
+                    <span class="bp-pagination-btn is-disabled" aria-hidden="true"><i class="fas fa-chevron-right"></i></span>
+                <% } %>
+            </nav>
+        </div>
+    </div>
+
+
+    <script>
+        const searchInput = document.getElementById('userSearch');
+        const usersTbody = document.getElementById('usersTbody');
+
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+
+            searchTimeout = setTimeout(async () => {
+            const query = searchInput.value.trim();
+
+            try {
+                const response = await fetch(`/admin/users?q=${encodeURIComponent(query)}&page=1`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+
+                const data = await response.json();
+                usersTbody.innerHTML = '';
+
+                if (data.users.length === 0) {
+                usersTbody.innerHTML = '<tr><td colspan="10">No users found</td></tr>';
+                return;
+                }
+
+                data.users.forEach((user, index) => {
+                const row = document.createElement('tr');
+                const statusText = user.status || (user.isActive ? 'active' : 'inactive');
+                const statusColor = statusText === 'active' ? 'success' : statusText === 'inactive' ? 'warning' : 'danger';
+                const statusDisplay = statusText.charAt(0).toUpperCase() + statusText.slice(1);
+
+                const totalBtc = (user.totalBtc != null ? Number(user.totalBtc) : 0).toFixed(16);
+                const referralCount = user.referralCount != null ? user.referralCount : 0;
+                const totalReferralRewards = (user.totalReferralRewards != null ? Number(user.totalReferralRewards) : 0).toFixed(16);
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${user.name}</td>
+                    <td>${user.email}</td>
+                    <td>${user.emailVerified ? 'Yes' : 'No'}</td>
+                    <td><span class="badge bg-${statusColor}">${statusDisplay}</span></td>
+                    <td class="amount-cell">${totalBtc}</td>
+                    <td>${referralCount}</td>
+                    <td class="amount-cell">${totalReferralRewards}</td>
+                    <td>${new Date(user.createdAt).toLocaleDateString()}</td>
+                    <td>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" onclick="toggleDropdown(this)" id="dropdownMenuButton${index}">
+                                <i class="fas fa-cog"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark" id="dropdownMenu${index}" style="display: none;">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${user._id}', 'active')">
+                                    <i class="fas fa-check text-success me-2"></i>Set Active
+                                </a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${user._id}', 'inactive')">
+                                    <i class="fas fa-pause text-warning me-2"></i>Set Inactive
+                                </a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${user._id}', 'suspended')">
+                                    <i class="fas fa-ban text-danger me-2"></i>Suspend
+                                </a></li>
+                            </ul>
+                        </div>
+                    </td>
+                `;
+                usersTbody.appendChild(row);
+                });
+
+            } catch (err) {
+                console.error('Search failed:', err);
+            }
+            }, 300);
+        });
+    </script>
+
+
+    <script>
+        const loading = document.getElementById('loading');
+
+        loading.style.display = 'block';
+        loading.style.display = 'none';
+
+        // Manual dropdown toggle function
+        window.toggleDropdown = function(button) {
+            // Close all other dropdowns first
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                if (menu.style.display === 'block') {
+                    menu.style.display = 'none';
+                }
+            });
+
+            // Find the dropdown menu for this button
+            const dropdown = button.parentElement;
+            const menu = dropdown.querySelector('.dropdown-menu');
+
+            if (menu.style.display === 'none' || menu.style.display === '') {
+                menu.style.display = 'block';
+                menu.style.position = 'absolute';
+                menu.style.zIndex = '1000';
+            } else {
+                menu.style.display = 'none';
+            }
+        };
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                    menu.style.display = 'none';
+                });
+            }
+        });
+
+        // Function to change user status
+        window.changeUserStatus = async function(userId, newStatus) {
+            if (!confirm(`Are you sure you want to change user status to ${newStatus}?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/users/update-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId: userId,
+                        status: newStatus
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Show success message
+                    showAlert('success', result.message);
+                    // Reload the page to reflect changes
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    showAlert('error', result.message);
+                }
+            } catch (error) {
+                console.error('Error updating user status:', error);
+                showAlert('error', 'Failed to update user status');
+            }
+        };
+
+        window.deleteUser = async function(userId) {
+            if (!confirm(`Are you sure you want to delete user ?`)) {
+                return;
+            }
+
+        };
+
+        // Function to show alerts
+        function showAlert(type, message) {
+            const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+            const iconClass = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
+
+            const alertHtml = `
+                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                    <i class="fas ${iconClass} me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+
+            // Insert alert at the top of main content
+            const mainContent = document.querySelector('.main-content');
+            mainContent.insertAdjacentHTML('afterbegin', alertHtml);
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                const alert = mainContent.querySelector('.alert');
+                if (alert) {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }
+            }, 5000);
+        }
+    </script>
+
+<%- include('partials/footer') %>

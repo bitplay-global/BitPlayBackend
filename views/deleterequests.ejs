@@ -1,0 +1,107 @@
+<%- include('partials/header', { title }) %>
+<%- include('partials/sidebar', { user }) %>
+
+<div class="main-content">
+
+    <div id="loading" style="display: none;">Searching...</div>
+
+    <div class="card-container">
+        <div class="cards">
+            <div class="card-header d-flex align-items-center">
+                <h2>Delete Requests</h2>
+
+                <div class="right-aligned-tableheader">
+                    <input
+                        type="text"
+                        id="requestSearch"
+                        class="form-control"
+                        placeholder="Search by email..."
+                        value="<%= query || '' %>"
+                        style="max-width: 250px;"
+                    />
+                </div>
+            </div>
+
+            <div class="table-responsive data-table" id="requestsTableContainer">
+                <table class="table table-striped table-hover table-bordered align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>#</th>
+                            <th>User Email</th>
+                            <th>Reason</th>
+                            <th>Created At</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestsTbody">
+                        <% deleteRequests.forEach((reqItem, index) => { %>
+                            <tr data-id="<%= reqItem._id %>">
+                                <td><%= (page - 1) * limit + index + 1 %></td>
+                                <td><%= reqItem.user ? reqItem.user.email : 'N/A' %></td>
+                                <td><%= reqItem.reason %></td>
+                                <td><%= new Date(reqItem.createdAt).toLocaleString() %></td>
+                            </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination mt-3">
+                <% if (page > 1) { %>
+                    <a href="?page=<%= page - 1 %><%= query ? '&q=' + encodeURIComponent(query) : '' %>" class="btn btn-outline-primary me-2">&laquo; Prev</a>
+                <% } %>
+                <span>Page <%= page %></span>
+                <% if (deleteRequests.length === limit) { %>
+                    <a href="?page=<%= page + 1 %><%= query ? '&q=' + encodeURIComponent(query) : '' %>" class="btn btn-outline-primary ms-2">Next &raquo;</a>
+                <% } %>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const searchInput = document.getElementById('requestSearch');
+        const requestsTbody = document.getElementById('requestsTbody');
+
+        let searchTimeout;
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+
+            searchTimeout = setTimeout(async () => {
+                const query = searchInput.value.trim();
+                document.getElementById('loading').style.display = 'block';
+
+                try {
+                    const response = await fetch(`/admin/delete_requests?q=${encodeURIComponent(query)}&page=1`, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+
+                    const data = await response.json();
+                    requestsTbody.innerHTML = '';
+
+                    if (data.deleteRequests.length === 0) {
+                        requestsTbody.innerHTML = '<tr><td colspan="4">No delete requests found</td></tr>';
+                        return;
+                    }
+
+                    data.deleteRequests.forEach((reqItem, index) => {
+                        const row = document.createElement('tr');
+                        row.setAttribute('data-id', reqItem._id);
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${reqItem.user ? reqItem.user.email : 'N/A'}</td>
+                            <td>${reqItem.reason}</td>
+                            <td>${new Date(reqItem.createdAt).toLocaleString()}</td>
+                        `;
+                        requestsTbody.appendChild(row);
+                    });
+
+                } catch (err) {
+                    console.error('Search failed:', err);
+                } finally {
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 300);
+        });
+    </script>
+
+<%- include('partials/footer') %>

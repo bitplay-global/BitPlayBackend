@@ -1,0 +1,300 @@
+{
+  "info": {
+    "_postman_id": "8f68f3f0-6de2-4f03-a2fd-6ef2e6ea9dd2",
+    "name": "Bitplay Withdrawal Test Suite",
+    "description": "Working Postman collection for withdrawal APIs.\n\nSetup before run:\n1) Set {{baseUrl}}\n2) Set {{userId}}\n3) Set {{speedAddress}} (example: user@speed.app)\n4) Optional: {{speedPaymentAmountBtc}} / {{speedPaymentAmountUsdt}} for create-speed-payment\n\nNotes:\n- In production/mobile-guard environments, required headers are already included.\n- **create-speed-payment** deducts BTC_DEPOSIT only and may hit the live Speed API.\n- Run in order from top to bottom.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "userId",
+      "value": "YOUR_USER_ID"
+    },
+    {
+      "key": "speedAddress",
+      "value": "user@speed.app"
+    },
+    {
+      "key": "speedPaymentAmountBtc",
+      "value": "0.0008"
+    },
+    {
+      "key": "speedPaymentAmountUsdt",
+      "value": "80"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Get Withdrawal Limits",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-app-id",
+            "value": "bitplay-mobile"
+          },
+          {
+            "key": "x-app-platform",
+            "value": "ios"
+          },
+          {
+            "key": "x-app-version",
+            "value": "1.0.0"
+          },
+          {
+            "key": "x-device-id",
+            "value": "postman-12345678"
+          },
+          {
+            "key": "x-mobile-client",
+            "value": "true"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals/limits",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "withdrawals",
+            "limits"
+          ]
+        }
+      }
+    },
+    {
+      "name": "02 - Create Withdrawal (Valid Example)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-id",
+            "value": "bitplay-mobile"
+          },
+          {
+            "key": "x-app-platform",
+            "value": "ios"
+          },
+          {
+            "key": "x-app-version",
+            "value": "1.0.0"
+          },
+          {
+            "key": "x-device-id",
+            "value": "postman-12345678"
+          },
+          {
+            "key": "x-mobile-client",
+            "value": "true"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 80\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "withdrawals"
+          ]
+        }
+      }
+    },
+    {
+      "name": "03 - POST create-speed-payment (auto Speed — use with care)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-id",
+            "value": "bitplay-mobile"
+          },
+          {
+            "key": "x-app-platform",
+            "value": "ios"
+          },
+          {
+            "key": "x-app-version",
+            "value": "1.0.0"
+          },
+          {
+            "key": "x-device-id",
+            "value": "postman-12345678"
+          },
+          {
+            "key": "x-mobile-client",
+            "value": "true"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": {{speedPaymentAmountUsdt}},\n  \"currency\": \"USDT\",\n  \"target_currency\": \"USDT\",\n  \"payment_methods\": [\"lightning\"],\n  \"metadata\": {\n    \"user_id\": \"{{userId}}\"\n  },\n  \"speed_wallet_address\": \"{{speedAddress}}\",\n  \"baseAmount\": {{speedPaymentAmountBtc}}\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals/create-speed-payment",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "withdrawals",
+            "create-speed-payment"
+          ]
+        },
+        "description": "`router.post(\"/create-speed-payment\", ...)`: deducts BTC_DEPOSIT, creates withdrawal, calls Speed send. Expect 200 with status PENDING or SENT; 400 insufficient balance; 409 if pending exists."
+      }
+    },
+    {
+      "name": "04 - Create Withdrawal (Invalid Address, Expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-id",
+            "value": "bitplay-mobile"
+          },
+          {
+            "key": "x-app-platform",
+            "value": "ios"
+          },
+          {
+            "key": "x-app-version",
+            "value": "1.0.0"
+          },
+          {
+            "key": "x-device-id",
+            "value": "postman-12345678"
+          },
+          {
+            "key": "x-mobile-client",
+            "value": "true"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"invalid-address\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 80\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "withdrawals"
+          ]
+        }
+      }
+    },
+    {
+      "name": "05 - Create Withdrawal (Below USDT Minimum, Expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "x-app-id",
+            "value": "bitplay-mobile"
+          },
+          {
+            "key": "x-app-platform",
+            "value": "ios"
+          },
+          {
+            "key": "x-app-version",
+            "value": "1.0.0"
+          },
+          {
+            "key": "x-device-id",
+            "value": "postman-12345678"
+          },
+          {
+            "key": "x-mobile-client",
+            "value": "true"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"chain\": \"USDT\",\n  \"toAddress\": \"{{speedAddress}}\",\n  \"amountBtc\": 0.0008,\n  \"amountNumeric\": 0.4\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "withdrawals"
+          ]
+        }
+      }
+    },
+    {
+      "name": "06 - Get User Withdrawals",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "x-app-id",
+            "value": "bitplay-mobile"
+          },
+          {
+            "key": "x-app-platform",
+            "value": "ios"
+          },
+          {
+            "key": "x-app-version",
+            "value": "1.0.0"
+          },
+          {
+            "key": "x-device-id",
+            "value": "postman-12345678"
+          },
+          {
+            "key": "x-mobile-client",
+            "value": "true"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/withdrawals/user/{{userId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "withdrawals",
+            "user",
+            "{{userId}}"
+          ]
+        }
+      }
+    }
+  ]
+}
