@@ -83,6 +83,16 @@ r = await rec(u);
 check('start and local start untouched', r.start_time === now && r.local_start_time === '21/09/2026, 10:00:00 AM');
 check('ad reward still added', r.claimedHashpower === 5.5, `claimed ${r.claimedHashpower}`);
 
+console.log('\n--- ad_cap_reached tells the app apart from a normal 0-reward response ---');
+u = uid(); now = Date.now();
+await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 60 });
+let res = await post({ user_id: u, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: null, rewarded_ads_watched: 61 });
+check('claim past the cap: ad_cap_reached is true', res.body.ad_cap_reached === true, JSON.stringify(res.body.ad_cap_reached));
+check('and grants nothing', res.body.mining_details.claimedHashpower === 0, res.body.mining_details.claimedHashpower);
+const u2 = uid();
+res = await post({ user_id: u2, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 1 });
+check('ordinary claim under the cap: ad_cap_reached is false', res.body.ad_cap_reached === false, JSON.stringify(res.body.ad_cap_reached));
+
 console.log('\n--- hourly settlement now includes sessions without local_start_time ---');
 const cron = fs.readFileSync(new URL('../cronJobs.js', import.meta.url), 'utf8');
 const q = cron.match(/UserMiningDetail\.find\(\{\s*mining_isactive: true,[\s\S]*?\}\);/)?.[0] || '';

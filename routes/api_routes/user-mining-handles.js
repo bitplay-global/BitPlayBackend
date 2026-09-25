@@ -457,6 +457,11 @@ router.post("/", async (req, res) => {
     // this Math.min is only the fallback for the regular rewarded_ads_watched track.)
     let cappedRewarded = rewarded_ads_watched;
     let cappedThirtyGh = thirty_gh_rewarded_ads_watched;
+    // Set when a claim is refused for having already hit the daily ad cap on its
+    // track, so the response can tell the app apart from a real grant of 0 --
+    // otherwise this looked identical to a normal successful call and the app
+    // had no way to show "come back tomorrow" instead of a dead-looking button.
+    let adCapReached = false;
     if (typeof rewarded_ads_watched === "number") {
       cappedRewarded = Math.min(rewarded_ads_watched, MAX_REWARDED_ADS_PER_TRACK);
     }
@@ -499,6 +504,9 @@ router.post("/", async (req, res) => {
       if (typeof thirty_gh_rewarded_ads_watched === "number") {
         // Server-computed reward replaces whatever the client sent for this track.
         claimedToAdd = thirtyGhServerReward;
+        if (!thirtyGhIsValidClaim && (existingRecord?.thirty_gh_rewarded_ads_watched || 0) >= MAX_SUPER_AD_MINER_CLAIMS_PER_DAY) {
+          adCapReached = true;
+        }
       } else if (claimedToAdd > 0) {
         if (typeof rewarded_ads_watched === "number") {
           const prev = existingRecord?.rewarded_ads_watched || 0;
@@ -506,6 +514,7 @@ router.post("/", async (req, res) => {
           const isFivePointFiveAd = claimedToAdd <= 6 && claimedToAdd >= 5;
           if (prev >= MAX_REWARDED_ADS_PER_TRACK && isFivePointFiveAd) {
             claimedToAdd = 0;
+            adCapReached = true;
           }
         }
       }
@@ -673,7 +682,7 @@ router.post("/", async (req, res) => {
 
     console.log("Setting User Data: ", updateData, user_id, "effective_hashpower:", effectiveHp);
 
-    res.json({ success: true, mining_details: responseDetails });
+    res.json({ success: true, mining_details: responseDetails, ad_cap_reached: adCapReached });
   } catch (err) {
     console.error("Error saving mining details:", err);
     res.status(500).json({ success: false, error: err.message });
