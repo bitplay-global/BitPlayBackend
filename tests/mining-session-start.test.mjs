@@ -93,6 +93,17 @@ const u2 = uid();
 res = await post({ user_id: u2, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 1 });
 check('ordinary claim under the cap: ad_cap_reached is false', res.body.ad_cap_reached === false, JSON.stringify(res.body.ad_cap_reached));
 
+console.log('\n--- GET /:userId no longer 500s when the client omits local_time ---');
+u = uid(); now = Date.now();
+await post({ user_id: u, hashpower: 25, mining_isactive: true, start_time: now, local_start_time: formatLocalStartTime(now, TZ, OFF) });
+res = await request(base).get(`/api/user_mining/${u}`);
+check('missing local_time: 200, not 500', res.status === 200, `status ${res.status} body ${JSON.stringify(res.body).slice(0, 200)}`);
+check('still returns the real streak/hashpower, not a crash', res.body?.mining_details?.streak_days !== undefined, JSON.stringify(res.body));
+res = await request(base).get(`/api/user_mining/${u}?local_time=not-a-date`);
+check('unparseable local_time: 200, not 500', res.status === 200, `status ${res.status}`);
+res = await request(base).get(`/api/user_mining/${u}?local_time=${encodeURIComponent(formatLocalStartTime(now, TZ, OFF))}`);
+check('valid local_time: still works normally', res.status === 200 && res.body.success === true, `status ${res.status}`);
+
 console.log('\n--- hourly settlement now includes sessions without local_start_time ---');
 const cron = fs.readFileSync(new URL('../cronJobs.js', import.meta.url), 'utf8');
 const q = cron.match(/UserMiningDetail\.find\(\{\s*mining_isactive: true,[\s\S]*?\}\);/)?.[0] || '';

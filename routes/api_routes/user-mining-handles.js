@@ -291,6 +291,29 @@ router.get("/:userId", async (req, res) => {
       });
     }
 
+    // The client's local_time query param is not guaranteed -- omitting it (or
+    // sending something unparseable) used to crash this whole endpoint with a
+    // 500 for every actively-mining user, blocking hashpower AND streak from
+    // ever refreshing until a request happened to include it. Skip only the
+    // elapsed-time calculation this call can't do without it; everything else
+    // (hashpower, streak) still returns normally.
+    if (typeof local_time !== "string" || (local_time.match(/\d+/g) || []).length < 6) {
+      return res.json({
+        success: true,
+        mining_details: {
+          ...mining_details.toObject(),
+          effective_hashpower: effectiveHashpower,
+          streak_days: streakDays,
+          streak_bonus_gh: streakBonusGh,
+          streak_tiers: streakTiers
+        },
+        calculated_btc: 0,
+        time_remaining: 0,
+        message: "local_time missing or invalid; returning current totals without elapsed-time calculation.",
+        daily_reward_claimed: false
+      });
+    }
+
     // Parse DB local_start_time
     const dbParts = local_start_time.match(/\d+/g); // [month, day, year, hour, min, sec]
     const dbAmPm = /AM|PM/i.exec(local_start_time)?.[0]?.toUpperCase();
