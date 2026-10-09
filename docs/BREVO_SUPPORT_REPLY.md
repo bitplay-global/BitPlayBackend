@@ -1,6 +1,8 @@
 # Brevo – admin support ticket replies
 
-When an admin replies from **Support Tickets** (`/admin/help`), the app sends the message with the [Brevo Transactional Email API](https://developers.brevo.com/reference/sendtransacemail).
+> **Now the fallback.** Replies are sent through Gmail SMTP first (`SMTP_USER` / `SMTP_PASS`, the same account as the ticket acknowledgements, see `helpers/ticketReplyEmail.js`). Brevo is used only if Gmail is not configured or its send fails. With Gmail, replies come from `SMTP_USER`; with Brevo, from `BREVO_SENDER_EMAIL`. The dashboard's confirmation says which one was used.
+
+When an admin replies from **Support Tickets** (`/admin/help`) and Brevo is used, the app sends the message with the [Brevo Transactional Email API](https://developers.brevo.com/reference/sendtransacemail).
 
 ## Environment variables
 

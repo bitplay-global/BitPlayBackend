@@ -122,8 +122,9 @@ export async function sendTicketReplyEmail({ toEmail, toName, message, ticketPre
   `.trim();
 
   const info = await getTransporter().sendMail({
-    from: `"${fromName}" <${getSmtpUser()}>`,
-    to: toName ? `"${toName}" <${toEmail.trim()}>` : toEmail.trim(),
+    // Address objects, so a name containing quotes or commas can't break the header.
+    from: { name: fromName, address: getSmtpUser() },
+    to: toName ? { name: toName, address: toEmail.trim() } : toEmail.trim(),
     subject: finalSubject,
     text: textParts.join("\n"),
     html: htmlContent,

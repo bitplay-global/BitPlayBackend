@@ -1,12 +1,13 @@
 import express from 'express';
 import SupportTicket from '../../models/SupportTicket.js';
 import mongoose from 'mongoose';
-import { sendTicketReplyEmail, isBrevoConfigured, verifyBrevoApiKey } from '../../helpers/brevoEmail.js';
+import { isBrevoConfigured, verifyBrevoApiKey } from '../../helpers/brevoEmail.js';
 import {
   sendTicketReplyEmail as sendSmtpTicketEmail,
   isSmtpConfigured,
   verifySmtpConnection,
 } from '../../helpers/smtpEmail.js';
+import { sendTicketReply } from '../../helpers/ticketReplyEmail.js';
 
 const router = express.Router();
 
@@ -132,11 +133,12 @@ router.post('/reply', requireAdminSession, async (req, res) => {
     });
   }
 
-  if (!isBrevoConfigured()) {
+  // Gmail SMTP first, Brevo as fallback (helpers/ticketReplyEmail.js).
+  if (!isSmtpConfigured() && !isBrevoConfigured()) {
     return res.status(503).json({
       success: false,
       message:
-        'Email is not configured. Set BREVO_API_KEY and BREVO_SENDER_EMAIL in .env (Brevo Transactional API).',
+        'Email is not configured. Set SMTP_USER and SMTP_PASS (Gmail), or BREVO_API_KEY and BREVO_SENDER_EMAIL (Brevo), then restart.',
     });
   }
 
@@ -147,17 +149,21 @@ router.post('/reply', requireAdminSession, async (req, res) => {
       if (ticket?.message) ticketPreview = String(ticket.message).slice(0, 2000);
     }
 
-    await sendTicketReplyEmail({
+    const { provider, fellBack } = await sendTicketReply({
       toEmail: String(email).trim(),
       toName: name ? String(name).trim() : undefined,
       message: String(message).trim(),
       ticketPreview: ticketPreview || undefined,
     });
 
-    return res.json({ success: true, message: 'Reply sent' });
+    return res.json({
+      success: true,
+      provider,
+      message: fellBack ? `Reply sent via ${provider} (Gmail failed, used the fallback)` : `Reply sent via ${provider}`,
+    });
   } catch (err) {
-    console.error('Brevo ticket reply failed:', err.message || err);
-    return res.status(500).json({
+    console.error('Ticket reply failed:', err.message || err);
+    return res.status(err.notConfigured ? 503 : 500).json({
       success: false,
       message: err.message || 'Failed to send email',
     });
