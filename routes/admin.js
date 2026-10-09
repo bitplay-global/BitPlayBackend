@@ -24,6 +24,7 @@ import BalanceHistory from '../models/BalanceHistory.js';
 import { sendCustomNotification, sendBulkNotifications } from '../services/notificationService.js';
 import AdMultiplierPrivilege from '../models/AdMultiplierPrivilege.js';
 import { escapeRegex } from "../helpers/escapeRegex.js";
+import { safeAdminNext, ADMIN_HOME } from '../helpers/adminRedirect.js';
 
 const { users_count_comparision, transactions_count_comparision, supportTickets_count_comparision } = dbActions;
 const {
@@ -39,6 +40,9 @@ const router = express.Router();
 const requireAuth = (req, res, next) => {
   if (req.session.isLoggedIn) {
     next();
+  } else if (req.method === 'GET') {
+    // Come back to this page after logging in.
+    res.redirect(`/admin/login?next=${encodeURIComponent(safeAdminNext(req.originalUrl))}`);
   } else {
     res.redirect('/admin/login');
   }
@@ -46,12 +50,15 @@ const requireAuth = (req, res, next) => {
 
 // Login page
 router.get('/login', (req, res) => {
+  const next = safeAdminNext(req.query.next);
   if (req.session.isLoggedIn) {
-    return res.redirect('/admin/dashboard');
+    return res.redirect(next);
   }
   res.render('login', {
     title: 'Admin Login',
-    error: req.session.error || null
+    error: req.session.error || null,
+    notice: req.query.expired ? 'Your session expired. Please log in again.' : null,
+    next: next === ADMIN_HOME ? '' : next,
   });
   req.session.error = null;
 });
@@ -99,12 +106,15 @@ function recordLoginFailure(ip) {
 // Handle login
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
+  // A failed attempt returns to the login page with the same destination.
+  const next = safeAdminNext(req.body.next);
+  const retryUrl = next === ADMIN_HOME ? '/admin/login' : `/admin/login?next=${encodeURIComponent(next)}`;
 
   try {
     const ip = req.ip;
     if (tooManyLoginFailures(ip)) {
       req.session.error = 'Too many failed attempts. Try again in 15 minutes.';
-      return res.redirect('/admin/login');
+      return res.redirect(retryUrl);
     }
     let adminUser = await WebUsers.findOne({ username });
 
@@ -138,22 +148,30 @@ router.post('/login', async (req, res) => {
       return req.session.regenerate(regenErr => {
         if (regenErr) {
           console.error('Session regenerate error:', regenErr);
-          return res.redirect('/admin/login');
+          return res.redirect(retryUrl);
         }
         req.session.isLoggedIn = true;
         req.session.adminUser = adminUser.username;
         req.session.adminUserData = adminUser;
-        return res.redirect('/admin/dashboard');
+        // Write the session to the store before redirecting, so the next
+        // request is already authenticated.
+        return req.session.save(saveErr => {
+          if (saveErr) {
+            console.error('Session save error:', saveErr);
+            return res.redirect(retryUrl);
+          }
+          return res.redirect(next);
+        });
       });
     }
 
     recordLoginFailure(ip);
     req.session.error = 'Invalid credentials';
-    res.redirect('/admin/login');
+    res.redirect(retryUrl);
   } catch (error) {
     console.error('Login error:', error);
     req.session.error = 'Login failed';
-    res.redirect('/admin/login');
+    res.redirect(retryUrl);
   }
 });
 

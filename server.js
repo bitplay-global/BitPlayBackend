@@ -3,6 +3,8 @@ import express from 'express';
 import crypto from 'crypto';
 import path from 'path';
 import session from 'express-session';
+import mongoose from 'mongoose';
+import { MongoSessionStore } from './helpers/mongoSessionStore.js';
 import cors from 'cors';
 import helmet from 'helmet';
 import connectDB from './config/database.js';
@@ -68,9 +70,12 @@ if (!sessionSecret) {
   console.error('[Session] SESSION_SECRET is not set: using a random per-process secret, so admin sessions reset on restart.');
 }
 
-// Session middleware
+// Session middleware. Sessions are stored in MongoDB (collection `sessions`),
+// so admin logins survive a restart. They only stay valid across restarts
+// when SESSION_SECRET is set, since the secret signs the session cookie.
 app.use(session({
   secret: sessionSecret,
+  store: new MongoSessionStore({ connection: mongoose.connection }),
   resave: false,
   saveUninitialized: false,
   cookie: {

@@ -18,6 +18,7 @@
     "test:btc-key": "node tests/btc-deposit-key.test.mjs",
     "test:streak": "node tests/streak.test.mjs",
     "test:ticket-reply": "node tests/ticket-reply-email.test.mjs",
+    "test:admin-session": "node tests/admin-session.test.mjs",
     "test:app-auth": "JWT_LIB_DIR=../bitplay-auth node tests/app-user-auth.test.mjs",
     "test:purchases": "node tests/purchase-verification.test.mjs",
     "test:revenuecat": "node tests/revenuecat-webhook.test.mjs",

@@ -13,6 +13,47 @@
     rel="stylesheet"
   />
   <link href="/css/dashboard.css" rel="stylesheet" />
+  <script>
+    // Expired admin login: any same-origin request answered with 401 means the
+    // session is gone (for example after a server restart). Go to the login
+    // page, which brings the admin back here afterwards, instead of letting
+    // the page show a bare "Unauthorized". Covers fetch and XMLHttpRequest.
+    (function () {
+      var redirecting = false;
+      function sameOrigin(url) {
+        try { return new URL(String(url || ''), location.href).origin === location.origin; } catch (e) { return false; }
+      }
+      function sessionExpired() {
+        if (redirecting) return;
+        redirecting = true;
+        // The page's own error handlers may still run; keep them quiet while leaving.
+        window.alert = function () {};
+        window.confirm = function () { return false; };
+        location.href = '/admin/login?expired=1&next=' + encodeURIComponent(location.pathname + location.search);
+      }
+      if (window.fetch) {
+        var originalFetch = window.fetch;
+        window.fetch = function (input) {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+          return originalFetch.apply(this, arguments).then(function (res) {
+            if (res.status === 401 && sameOrigin(url)) {
+              sessionExpired();
+              return new Promise(function () {}); // never settles: the page is navigating away
+            }
+            return res;
+          });
+        };
+      }
+      var originalOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function (method, url) {
+        var xhr = this;
+        xhr.addEventListener('readystatechange', function () {
+          if (xhr.readyState === 4 && xhr.status === 401 && sameOrigin(url)) sessionExpired();
+        });
+        return originalOpen.apply(this, arguments);
+      };
+    })();
+  </script>
 </head>
 <body>
   <div class="admin-container">
