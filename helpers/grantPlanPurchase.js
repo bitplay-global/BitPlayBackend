@@ -93,16 +93,6 @@ export async function grantPlanPurchase({
       userMining.hashpower = updatedHashPower; // Total = claimed + purchased
 
       // Migration: Initialize missing fields for old users
-      if (!userMining.dailyVideoRequirement || !userMining.dailyVideoRequirement.lastResetDate) {
-        console.log(`Migrating dailyVideoRequirement for user ${userId} during purchase`);
-        userMining.dailyVideoRequirement = {
-          videosWatched: 0,
-          required: 10,
-          lastResetDate: new Date(),
-          consecutiveFailures: 0,
-        };
-      }
-
       if (!userMining.lossTracking || !userMining.lossTracking.last_check_date) {
         console.log(`Migrating lossTracking for user ${userId} during purchase`);
         userMining.lossTracking = {

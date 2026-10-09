@@ -96,7 +96,7 @@ async function main() {
   for (const m of minings) {
     for (const k of ['_id', 'mining_isactive', 'hashpower', 'claimedHashpower', 'purchasedHashpower', 'start_time', 'stop_time',
       'local_start_time', 'local_stop_time', 'offset', 'timezone', 'rewarded_ads_watched', 'thirty_gh_rewarded_ads_watched',
-      'random_ads_watched', 'daily_reward_claimed', 'lastResetTime', 'dailyVideoRequirement', 'lossTracking', 'createdAt', 'updatedAt']) {
+      'random_ads_watched', 'daily_reward_claimed', 'lastResetTime', 'lossTracking', 'createdAt', 'updatedAt']) {
       if (k in m) show(k, m[k]);
     }
     console.log('  -- streak');

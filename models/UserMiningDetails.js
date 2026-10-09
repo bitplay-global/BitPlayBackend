@@ -77,24 +77,6 @@ const UserMiningSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  dailyVideoRequirement: {
-    videosWatched: {
-      type: Number,
-      default: 0
-    },
-    required: {
-      type: Number,
-      default: 10 // Default requirement: 5 videos per day
-    },
-    lastResetDate: {
-      type: Date,
-      default: Date.now
-    },
-    consecutiveFailures: {
-      type: Number,
-      default: 0
-    }
-  },
   // NEW: Loss Tracking
   lossTracking: {
     daily_ads_watched: {
@@ -192,34 +174,6 @@ const STREAK_TIERS = [
 ];
 UserMiningSchema.statics.getStreakTiers = function() {
   return STREAK_TIERS;
-};
-
-// Method to reset daily video counter
-UserMiningSchema.methods.resetDailyVideoCounter = function() {
-  this.dailyVideoRequirement.videosWatched = 0;
-  this.dailyVideoRequirement.lastResetDate = new Date();
-  this.lossTracking.daily_ads_watched = 0; // Reset daily ads too
-};
-
-// Method to increment daily video count
-UserMiningSchema.methods.incrementDailyVideoCount = function() {
-  this.dailyVideoRequirement.videosWatched += 1;
-};
-
-// Method to check if daily requirement is met
-UserMiningSchema.methods.metDailyRequirement = function() {
-  return this.dailyVideoRequirement.videosWatched >= this.dailyVideoRequirement.required;
-};
-
-// Method to get daily progress
-UserMiningSchema.methods.getDailyProgress = function() {
-  return {
-    videosWatched: this.dailyVideoRequirement.videosWatched,
-    required: this.dailyVideoRequirement.required,
-    met: this.metDailyRequirement(),
-    consecutiveFailures: this.dailyVideoRequirement.consecutiveFailures,
-    lastResetDate: this.dailyVideoRequirement.lastResetDate
-  };
 };
 
 // Method to increment loss offset ads

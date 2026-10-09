@@ -46,7 +46,6 @@ const USER_PATH_PATTERNS = [
   "/firebase_tokens/check/:userId",
   "/security/2fa-status/:userId",
   "/user_mining/:userId",
-  "/user_mining/daily-progress/:userId",
   "/user_mining/trading-history/:userId",
   "/user_mining/spin-history/:userId",
   "/user_mining/memory-history/:userId",

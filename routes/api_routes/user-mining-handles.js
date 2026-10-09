@@ -34,43 +34,6 @@ const isSameLocalDay = (date1, date2) =>
   date1.getDate() === date2.getDate();
 
 
-const incrementDailyVideoCount = async (req, res) => {
-  try {
-    const { user } = req.body;
-
-    let miningDetails = await UserMiningDetail.findOne({ user });
-
-    if (!miningDetails) {
-      return res.status(404).json({
-        success: false,
-        message: 'Mining details not found'
-      });
-    }
-
-    miningDetails.incrementDailyVideoCount();
-
-    // Reset consecutive failures if they meet requirement
-    if (miningDetails.metDailyRequirement()) {
-      miningDetails.dailyVideoRequirement.consecutiveFailures = 0;
-    }
-
-    await miningDetails.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Video count incremented',
-      daily_progress: miningDetails.getDailyProgress()
-    });
-  } catch (error) {
-    console.error('Error incrementing video count:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error incrementing video count',
-      error: error.message
-    });
-  }
-};
-
 /**
  * @desc    Increment daily ads watched for loss offset
  * @route   POST /api/user_mining/increment-loss-ad
@@ -108,52 +71,6 @@ const incrementLossOffsetAd = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error incrementing ad count',
-      error: error.message
-    });
-  }
-};
-
-/**
- * @desc    Get daily video progress
- * @route   GET /api/user_mining/daily-progress/:user
- * @access  Public
- */
-const getDailyProgress = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    // Fix: Use UserMiningDetail (singular) and query by { user: userId }
-    let miningDetails = await UserMiningDetail.findOne({ user: userId });
-
-    if (!miningDetails) {
-      return res.status(404).json({
-        success: false,
-        message: 'Mining details not found'
-      });
-    }
-
-
-    // Get progress
-    const dailyProgress = typeof miningDetails.getDailyProgress === 'function'
-      ? miningDetails.getDailyProgress()
-      : {
-        videosWatched: miningDetails.dailyVideoRequirement?.videosWatched || 0,
-        required: miningDetails.dailyVideoRequirement?.required || 5,
-        met: (miningDetails.dailyVideoRequirement?.videosWatched || 0) >=
-          (miningDetails.dailyVideoRequirement?.required || 5),
-        consecutiveFailures: miningDetails.dailyVideoRequirement?.consecutiveFailures || 0,
-        lastResetDate: miningDetails.dailyVideoRequirement?.lastResetDate
-      };
-
-    res.status(200).json({
-      success: true,
-      daily_progress: dailyProgress
-    });
-  } catch (error) {
-    console.error('Error getting daily progress:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error retrieving daily progress',
       error: error.message
     });
   }
@@ -704,14 +621,8 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Increment daily video count (called when user watches ad)
-router.post('/increment-video', incrementDailyVideoCount);
-
 // Increment loss offset ad count (called when user watches rewarded ad)
 router.post('/increment-loss-ad', incrementLossOffsetAd);
-
-// Get daily video progress
-router.get('/daily-progress/:userId', getDailyProgress);
 
 // ─── Trading History Routes ───
 

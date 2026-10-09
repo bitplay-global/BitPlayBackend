@@ -183,9 +183,7 @@ Route file: `routes/api_routes/user-mining-handles.js`
 |--------|----------|-------------|
 | GET | `/:userId` | Get user mining details |
 | POST | `/` | Create/update user mining record |
-| POST | `/increment-video` | Increment daily video count |
 | POST | `/increment-loss-ad` | Increment loss offset ad |
-| GET | `/daily-progress/:userId` | Get daily mining progress |
 
 ---
 
