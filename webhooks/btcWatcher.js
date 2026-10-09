@@ -1,6 +1,7 @@
 // /btcWatcher.js
 import * as zmq from "zeromq";
 import * as bitcoin from "bitcoinjs-lib";
+import mongoose from "mongoose";
 import WalletAddress from "../models/WalletAddress.js";
 import Deposit from "../models/Deposit.js";
 import Balance from "../models/Balance.js";
@@ -36,6 +37,24 @@ export function registerBtcAddress(addr) {
 }
 
 // ---- helpers ----
+
+/**
+ * Address records may hold either the account's Mongo id or its Firebase
+ * uid. Balances are keyed by the Mongo id, so credit against that.
+ * Returns null when the id matches no account.
+ */
+async function resolveAccountId(id) {
+  if (!id) return null;
+  const s = String(id);
+  const users = mongoose.connection.collection("users");
+  if (/^[0-9a-fA-F]{24}$/.test(s)) {
+    const u = await users.findOne({ _id: new mongoose.Types.ObjectId(s) }, { projection: { _id: 1 } });
+    if (u) return String(u._id);
+  }
+  const u = await users.findOne({ firebase_uid: s }, { projection: { _id: 1 } });
+  return u ? String(u._id) : null;
+}
+
 async function rpc(method, params = []) {
   const body = JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params });
 
@@ -172,7 +191,9 @@ async function updateConfirmationsForPending(txids) {
           // recover it from the deposit address.
           if (!dep.user) {
             const rec = await WalletAddress.findOne({ chain: "btc", address: dep.address }).lean();
-            if (rec?.userId) dep.user = rec.userId;
+            if (rec?.userId) dep.user = await resolveAccountId(rec.userId);
+          } else {
+            dep.user = await resolveAccountId(dep.user);
           }
           if (!dep.user) {
             console.warn(`BTC deposit ${txid}: no user owns address ${dep.address}; not crediting`);

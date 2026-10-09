@@ -119,27 +119,42 @@ async function main() {
     return;
   }
 
-  if (loaded.includes(WALLET)) throw new Error(`"${WALLET}" is already loaded; nothing to rebuild. Unload it first if you really mean to replace it.`);
-
-  if (onDisk.includes(WALLET)) {
-    if (!RENAME_OLD) throw new Error(`A wallet named "${WALLET}" exists on disk but is not loaded. Re-run with --rename-old to move it aside, or move it yourself.`);
-    const datadir = process.env.BITCOIN_DATADIR || path.join(os.homedir(), '.bitcoin');
-    const from = path.join(datadir, 'wallets', WALLET);
-    const to = `${from}.unloadable-${new Date().toISOString().slice(0, 10)}`;
-    if (!fs.existsSync(from)) throw new Error(`Expected wallet dir at ${from}; set BITCOIN_DATADIR`);
-    fs.renameSync(from, to);
-    console.log(`moved old wallet dir -> ${to}`);
+  if (loaded.includes(WALLET)) {
+    // Already loaded: it is either a wallet this script created on an earlier
+    // run that stopped before the import, or a healthy one. Only add the
+    // descriptor if it is missing; never recreate.
+    const info = await rpc('getwalletinfo', [], WALLET);
+    if (!info.descriptors || info.private_keys_enabled) {
+      throw new Error(`"${WALLET}" is loaded but is not a watch-only descriptor wallet; unload it and re-run with --rename-old`);
+    }
+    console.log(`"${WALLET}" is already loaded; checking its descriptors`);
+  } else {
+    if (onDisk.includes(WALLET)) {
+      if (!RENAME_OLD) throw new Error(`A wallet named "${WALLET}" exists on disk but is not loaded. Re-run with --rename-old to move it aside, or move it yourself.`);
+      const datadir = process.env.BITCOIN_DATADIR || path.join(os.homedir(), '.bitcoin');
+      const from = path.join(datadir, 'wallets', WALLET);
+      const to = `${from}.unloadable-${new Date().toISOString().slice(0, 10)}`;
+      if (!fs.existsSync(from)) throw new Error(`Expected wallet dir at ${from}; set BITCOIN_DATADIR`);
+      fs.renameSync(from, to);
+      console.log(`moved old wallet dir -> ${to}`);
+    }
+    // createwallet(name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup)
+    await rpc('createwallet', [WALLET, true, true, '', false, true, true]);
+    console.log(`created descriptor wallet "${WALLET}" (watch-only, load_on_startup=true)`);
   }
 
-  // createwallet(name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup)
-  await rpc('createwallet', [WALLET, true, true, '', false, true, true]);
-  console.log(`created descriptor wallet "${WALLET}" (watch-only, load_on_startup=true)`);
-
-  const result = await rpc('importdescriptors', [[{
-    desc: descriptor, active: false, range: [0, range], timestamp, internal: false, label: 'deposits',
-  }]], WALLET);
-  if (!result?.[0]?.success) throw new Error(`importdescriptors failed: ${JSON.stringify(result)}`);
-  console.log('descriptor imported' + (result[0].warnings?.length ? ` (warnings: ${result[0].warnings.join('; ')})` : ''));
+  const bare = descriptor.replace(/#\w+$/, '');
+  const existing = (await rpc('listdescriptors', [], WALLET)).descriptors.map(d => d.desc.replace(/#\w+$/, ''));
+  if (existing.includes(bare)) {
+    console.log('descriptor already present; skipping import');
+  } else {
+    // Note: Core rejects a `label` on a ranged descriptor.
+    const result = await rpc('importdescriptors', [[{
+      desc: descriptor, active: false, range: [0, range], timestamp, internal: false,
+    }]], WALLET);
+    if (!result?.[0]?.success) throw new Error(`importdescriptors failed: ${JSON.stringify(result)}`);
+    console.log('descriptor imported' + (result[0].warnings?.length ? ` (warnings: ${result[0].warnings.join('; ')})` : ''));
+  }
 
   // Verify every address the app ever issued is recognised by the wallet.
   let unknown = 0;

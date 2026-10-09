@@ -49,14 +49,24 @@ async function main() {
 
   if (dep.credited) { console.log('Already credited; nothing to do.'); return mongoose.disconnect(); }
 
-  let user = dep.user;
-  if (!user) {
+  let rawOwner = dep.user;
+  if (!rawOwner) {
     const rec = await db.collection('walletaddresses').findOne({ chain: 'btc', address: dep.address });
-    user = rec?.userId;
+    rawOwner = rec?.userId;
   }
-  if (!user) throw new Error(`No user owns address ${dep.address}; cannot credit`);
-  const owner = await db.collection('users').findOne({ _id: new mongoose.Types.ObjectId(user) }, { projection: { email: 1 } }).catch(() => null);
-  console.log(`owner  : ${user}${owner?.email ? ` (${owner.email})` : ''}`);
+  if (!rawOwner) throw new Error(`No user owns address ${dep.address}; cannot credit`);
+
+  // Address records may hold either the account's Mongo id or its Firebase
+  // uid. Balances are keyed by the Mongo id, so resolve to that.
+  const users = db.collection('users');
+  let owner = null;
+  if (/^[0-9a-fA-F]{24}$/.test(String(rawOwner))) {
+    owner = await users.findOne({ _id: new mongoose.Types.ObjectId(String(rawOwner)) }, { projection: { email: 1, firebase_uid: 1 } });
+  }
+  if (!owner) owner = await users.findOne({ firebase_uid: String(rawOwner) }, { projection: { email: 1, firebase_uid: 1 } });
+  if (!owner) throw new Error(`Address owner "${rawOwner}" matches no user by _id or firebase_uid; cannot credit`);
+  const user = String(owner._id);
+  console.log(`owner  : ${user}${owner.email ? ` (${owner.email})` : ''}${user !== String(rawOwner) ? `  [resolved from ${rawOwner}]` : ''}`);
 
   if (!a.apply) { console.log('\nDry run. Re-run with --confirmations <n> --apply to credit.'); return mongoose.disconnect(); }
 
