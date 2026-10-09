@@ -42,9 +42,20 @@ const manifest = { database: db.databaseName, startedAt: new Date(started).toISO
 let total = 0;
 console.log(`database ${db.databaseName}: ${collections.length} collections`);
 
+// Collection names are case-sensitive, Windows and macOS filenames are not:
+// "WebUsers" and "webusers" would overwrite each other when the backup is
+// unpacked there. Names that clash ignoring case get a numbered suffix; the
+// manifest maps every collection to its file.
+const byLower = new Map();
+for (const name of collections) byLower.set(name.toLowerCase(), [...(byLower.get(name.toLowerCase()) || []), name]);
+const fileFor = name => {
+  const group = byLower.get(name.toLowerCase());
+  return group.length > 1 ? `${name}~${group.indexOf(name) + 1}.jsonl.gz` : `${name}.jsonl.gz`;
+};
+
 for (const name of collections) {
   const coll = db.collection(name);
-  const file = `${name}.jsonl.gz`;
+  const file = fileFor(name);
   let written = 0;
   async function* lines() {
     for await (const doc of coll.find({}, { batchSize: 1000 })) {
