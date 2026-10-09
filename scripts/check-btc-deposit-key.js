@@ -74,21 +74,33 @@ const addrs = await mongoose.connection.collection('walletaddresses')
 const when = a => (a.createdAt ? new Date(a.createdAt) : a._id?.getTimestamp?.())?.toISOString?.().slice(0, 10) ?? '?';
 if (addrs.length) console.log(`stored BTC addresses: ${addrs.length}, idx ${addrs[0].idx}..${addrs[addrs.length - 1].idx}, created ${when(addrs[0])} .. ${when(addrs[addrs.length - 1])}`);
 
-const hits = Object.fromEntries(layouts.map(l => [l.name, 0]));
-const unmatched = [];
-for (const a of addrs) {
-  if (!Number.isInteger(a.idx)) continue;
-  let matched = false;
-  for (const l of layouts) {
-    let d; try { d = l.f(a.idx); } catch { continue; }
-    if (d === a.address) { hits[l.name]++; matched = true; }
+// Index-independent search: derive the first SCAN addresses of every layout
+// and look each stored address up. Catches the case where the stored idx is
+// not the index that was actually used.
+const SCAN = 2000;
+const table = new Map(); // address -> { layout, i }
+for (const l of layouts) {
+  for (let i = 0; i < SCAN; i++) {
+    let d; try { d = l.f(i); } catch { break; }
+    if (!table.has(d)) table.set(d, { layout: l.name, i });
   }
-  if (!matched) unmatched.push(a);
 }
-console.log('\nmatches per layout:');
-for (const [name, n] of Object.entries(hits)) console.log(`  ${name.padEnd(30)} ${n}`);
+const hits = Object.fromEntries(layouts.map(l => [l.name, { sameIdx: 0, otherIdx: 0 }]));
+const unmatched = [], shifted = [];
+for (const a of addrs) {
+  const m = table.get(a.address);
+  if (!m) { unmatched.push(a); continue; }
+  if (m.i === a.idx) hits[m.layout].sameIdx++;
+  else { hits[m.layout].otherIdx++; shifted.push({ ...a, layout: m.layout, realIdx: m.i }); }
+}
+console.log(`\nmatches per layout (searching indexes 0..${SCAN - 1}):`);
+for (const [name, h] of Object.entries(hits)) console.log(`  ${name.padEnd(30)} at stored idx: ${h.sameIdx}   at a different index: ${h.otherIdx}`);
+if (shifted.length) {
+  console.log('stored idx vs the index that really produces the address:');
+  for (const s of shifted.slice(0, 70)) console.log(`  stored ${String(s.idx).padStart(3)} -> real ${String(s.realIdx).padStart(4)}  ${s.address}  (${s.layout}, ${when(s)})`);
+}
 console.log(`unmatched: ${unmatched.length} of ${addrs.length}`);
-if (unmatched.length && unmatched.length <= 12) for (const a of unmatched) console.log(`  idx ${a.idx}  ${a.address}  (${when(a)})`);
+if (unmatched.length && unmatched.length <= 70) for (const a of unmatched) console.log(`  idx ${String(a.idx).padStart(3)}  ${a.address}  (${when(a)})`);
 
 if (xprv) {
   console.log(`\nIf BTC_XPRV is the key to keep, BTC_XPUB must be its account key (public, safe to copy):`);
