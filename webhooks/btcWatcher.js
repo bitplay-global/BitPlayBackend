@@ -168,26 +168,34 @@ async function updateConfirmationsForPending(txids) {
 
         // credit when reaching threshold & not yet credited
         if (!dep.credited && confs >= BTC_MIN_CONFS) {
-          dep.credited = true;
-          dep.creditedAt = new Date();
-          console.log("BitcoinWatcher Depositing Funds", dep.userId, dep.amountNumeric);
+          // Older records were saved without an owner (see handleRawTx);
+          // recover it from the deposit address.
+          if (!dep.user) {
+            const rec = await WalletAddress.findOne({ chain: "btc", address: dep.address }).lean();
+            if (rec?.userId) dep.user = rec.userId;
+          }
+          if (!dep.user) {
+            console.warn(`BTC deposit ${txid}: no user owns address ${dep.address}; not crediting`);
+          } else {
+            // amountNumeric is a Decimal128; arithmetic on it yields NaN.
+            const btcAmount = Number(dep.amountNumeric?.toString?.() ?? dep.amountNumeric);
+            dep.credited = true;
+            dep.creditedAt = new Date();
+            console.log("BitcoinWatcher Depositing Funds", dep.user, btcAmount);
 
-          const user_sub_res = await confirmBtcPayment(dep.userId, dep.amountNumeric);
+            const user_sub_res = await confirmBtcPayment(dep.user, btcAmount);
+            console.log("User Sub Update Response: ", user_sub_res);
 
-          console.log("User Sub Update Response: ", user_sub_res);
+            await Balance.updateOne(
+              { user: dep.user },
+              { $inc: { BTC_DEPOSIT: dep.amountNumeric } },
+              { upsert: true }
+            );
+            console.log(`BTC credited user ${dep.user} ${btcAmount} BTC (tx ${txid})`);
 
-          await Balance.updateOne(
-            { user: dep.userId },
-            { $inc: { BTC_DEPOSIT: dep.amountNumeric } },
-            { upsert: true }
-          );
-
-          console.log(
-            `BTC credited user ${dep.userId} ${dep.amountNumeric} BTC (tx ${txid})`
-          );
-
-          // Trigger sweeper after credit
-          await sweepDeposit(dep);
+            // Trigger sweeper after credit
+            await sweepDeposit(dep);
+          }
         }
 
         await dep.save();
@@ -230,7 +238,10 @@ async function handleRawTx(txHex) {
       { txHash: txid, chain: "btc", address: hit.addr },
       {
         $setOnInsert: {
-          userId: rec.userId,
+          // The Deposit schema's field is `user`; writing `userId` here was
+          // silently dropped by Mongoose, leaving every deposit without an
+          // owner and the credit step with nobody to credit.
+          user: rec.userId,
           asset: "BTC",
           chain: "btc",
           amountNumeric: BTC_VALUE,
