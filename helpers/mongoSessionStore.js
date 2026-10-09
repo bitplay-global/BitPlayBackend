@@ -30,11 +30,21 @@ export class MongoSessionStore extends session.Store {
     return this.connection.collection(this.collectionName);
   }
 
+  /**
+   * TTL index on `expires`. Uses MongoDB's default name (expires_1), the one
+   * connect-mongo creates, so an existing index from an earlier setup is
+   * reused rather than rejected. The index is only housekeeping (get() already
+   * ignores expired sessions), so a failure here is logged and never blocks a
+   * login: an earlier version passed a custom name, got "Index already exists
+   * with a different name" on every save, and nobody could log in.
+   */
   ensureIndex() {
     if (!this.indexReady) {
       this.indexReady = this.col()
-        .createIndex({ expires: 1 }, { expireAfterSeconds: 0, name: 'expires_ttl' })
-        .catch(err => { this.indexReady = null; throw err; });
+        .createIndex({ expires: 1 }, { expireAfterSeconds: 0 })
+        .catch(err => {
+          console.warn(`[Session] could not create the sessions TTL index (sessions still work): ${err.message}`);
+        });
     }
     return this.indexReady;
   }

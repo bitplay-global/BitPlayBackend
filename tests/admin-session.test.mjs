@@ -84,6 +84,23 @@ console.log('\nsession fixation');
   check('login issues a new session id', first && second && first !== second);
 }
 
+console.log('\nexisting sessions collection from an earlier setup');
+for (const [label, opts] of [
+  ['connect-mongo style index (expires_1, TTL 0)', { expireAfterSeconds: 0 }],
+  ['same key, different TTL options', { expireAfterSeconds: 3600 }],
+  ['same key, custom name', { expireAfterSeconds: 0, name: 'some_other_name' }],
+]) {
+  await sessions().drop().catch(() => {});
+  await sessions().createIndex({ expires: 1 }, opts);
+  const warn = console.warn; console.warn = () => {};
+  try {
+    const app = makeApp('stable-secret');
+    const res = await request(app).post('/login');
+    const cookie = cookieOf(res);
+    check(`login works with ${label}`, res.status === 204 && (await request(app).get('/me').set('Cookie', cookie)).status === 200, `status ${res.status}`);
+  } finally { console.warn = warn; }
+}
+
 console.log('\nlogin page renders');
 {
   const view = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'views', 'login.ejs');
