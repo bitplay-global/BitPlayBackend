@@ -66,6 +66,9 @@ if (xprv) {
 if (xpub) {
   layouts.push({ name: 'xpub route 0/i', f: i => p2wpkh(xpub.derivePath(`0/${i}`)) });
   layouts.push({ name: 'xpub i', f: i => p2wpkh(xpub.derive(i)) });
+  layouts.push({ name: 'xpub 1/i (change chain)', f: i => p2wpkh(xpub.derivePath(`1/${i}`)) });
+  layouts.push({ name: 'xpub 0/0/i', f: i => p2wpkh(xpub.derivePath(`0/0/${i}`)) });
+  layouts.push({ name: 'xpub i/0', f: i => p2wpkh(xpub.derivePath(`${i}/0`)) });
 }
 
 await mongoose.connect(process.env.MONGODB_URI);
@@ -86,18 +89,18 @@ for (const l of layouts) {
   }
 }
 const hits = Object.fromEntries(layouts.map(l => [l.name, { sameIdx: 0, otherIdx: 0 }]));
-const unmatched = [], shifted = [];
+const unmatched = [], matched = [];
 for (const a of addrs) {
   const m = table.get(a.address);
   if (!m) { unmatched.push(a); continue; }
-  if (m.i === a.idx) hits[m.layout].sameIdx++;
-  else { hits[m.layout].otherIdx++; shifted.push({ ...a, layout: m.layout, realIdx: m.i }); }
+  if (m.i === a.idx) hits[m.layout].sameIdx++; else hits[m.layout].otherIdx++;
+  matched.push({ ...a, layout: m.layout, realIdx: m.i });
 }
 console.log(`\nmatches per layout (searching indexes 0..${SCAN - 1}):`);
 for (const [name, h] of Object.entries(hits)) console.log(`  ${name.padEnd(30)} at stored idx: ${h.sameIdx}   at a different index: ${h.otherIdx}`);
-if (shifted.length) {
-  console.log('stored idx vs the index that really produces the address:');
-  for (const s of shifted.slice(0, 70)) console.log(`  stored ${String(s.idx).padStart(3)} -> real ${String(s.realIdx).padStart(4)}  ${s.address}  (${s.layout}, ${when(s)})`);
+if (matched.length) {
+  console.log('matched addresses (stored idx -> index that produces it):');
+  for (const s of matched.slice(0, 70)) console.log(`  stored ${String(s.idx).padStart(3)} -> real ${String(s.realIdx).padStart(4)}  ${s.address}  (${s.layout}, ${when(s)})`);
 }
 console.log(`unmatched: ${unmatched.length} of ${addrs.length}`);
 if (unmatched.length && unmatched.length <= 70) for (const a of unmatched) console.log(`  idx ${String(a.idx).padStart(3)}  ${a.address}  (${when(a)})`);
