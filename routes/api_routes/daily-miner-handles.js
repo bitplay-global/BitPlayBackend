@@ -1,6 +1,7 @@
 import express from 'express';
 import UserMiningDetail from "../../models/UserMiningDetails.js";
 import DailyFreeMiner from "../../models/DailyMiner.js";
+import { computeStreak, toDayString } from "../../helpers/streak.js";
 
 const router = express.Router();
 
@@ -58,32 +59,18 @@ router.post("/", async (req, res) => {
     const claim = new DailyFreeMiner({ userId, claimedAt: clientLocalTime });
     await claim.save();
 
-    // Update streak: consecutive days of claiming daily reward
-    const yyyy = clientLocalTime.getFullYear();
-    const mm = String(clientLocalTime.getMonth() + 1).padStart(2, "0");
-    const dd = String(clientLocalTime.getDate()).padStart(2, "0");
-    const todayStr = `${yyyy}-${mm}-${dd}`;
-    const yesterday = new Date(clientLocalTime);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
-
-    // Update streak: consecutive days of claiming daily reward
+    // Update streak: consecutive days of claiming daily reward.
+    // Day math lives in helpers/streak.js so this path and the mining POST
+    // can never disagree about what counts as "yesterday".
+    const todayStr = toDayString(clientLocalTime);
     if (miningDetails) {
-      const last = (miningDetails.streakLastDate && String(miningDetails.streakLastDate).trim()) || "";
-      const prevDays = miningDetails.streakDays || 0;
-      if (last === todayStr) {
-        console.log("Streak: already counted today", { userId, todayStr, streakDays: prevDays });
-      } else if (last === yesterdayStr) {
-        miningDetails.streakDays = prevDays + 1;
-        miningDetails.streakLastDate = todayStr;
+      const next = computeStreak(miningDetails, todayStr);
+      if (next.changed) {
+        miningDetails.streakDays = next.streakDays;
+        miningDetails.streakLastDate = next.streakLastDate;
         await miningDetails.save();
-        console.log("Streak: incremented (consecutive)", { userId, todayStr, yesterdayStr, from: prevDays, to: miningDetails.streakDays });
-      } else {
-        miningDetails.streakDays = 1;
-        miningDetails.streakLastDate = todayStr;
-        await miningDetails.save();
-        console.log("Streak: reset/start", { userId, todayStr, last: last || "none", streakDays: 1 });
       }
+      console.log("Streak:", next.reason, { userId, todayStr, streakDays: next.streakDays, streakLastDate: next.streakLastDate });
     }
 
     const streakBonusGh = typeof miningDetails.getStreakBonusGh === 'function'

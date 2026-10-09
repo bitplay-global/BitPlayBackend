@@ -3,6 +3,7 @@ import UserMiningDetail from "../../models/UserMiningDetails.js";
 import Balance from "../../models/Balance.js";
 import DailyFreeMiner from "../../models/DailyMiner.js";
 import AdMultiplierPrivilege from "../../models/AdMultiplierPrivilege.js";
+import { computeStreak, dayStringFromLocalTime, dayStringFromOffset, toDayString } from "../../helpers/streak.js";
 import {
   getUserLocalDateStr,
   getSessionStartDateStrFromLocalStart,
@@ -458,6 +459,9 @@ router.post("/", async (req, res) => {
       local_stop_time,
       // Backward/forward-compat: some clients may send `local_end_time`
       local_end_time,
+      // Client's current local time ("DD/MM/YYYY, hh:mm:ss AM/PM"); optional,
+      // used only to pick the streak day. Older apps don't send it.
+      local_time,
       offset,
       timezone,
       stock_game_bonus
@@ -544,38 +548,26 @@ router.post("/", async (req, res) => {
       const newClaimed = currentClaimed + claimedToAdd;
       let totalHashpower = newClaimed + currentPurchased;
 
-      // Update streak when user sends daily claim (hashpower): use client local date when available
-      let todayStr;
-      if (typeof local_start_time === "string" && local_start_time.trim() !== "") {
-        const parts = local_start_time.match(/\d+/g);
-        if (parts && parts.length >= 3) {
-          const day = parseInt(parts[0], 10);
-          const month = parseInt(parts[1], 10) - 1;
-          const year = parseInt(parts[2], 10);
-          const d = new Date(year, month, day);
-          todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        }
+      // Update streak on a reward claim. The day must be the USER's local
+      // calendar day, the same one the daily-claim route uses, or the two
+      // routes reset each other's streak (see helpers/streak.js).
+      // Sources, best first:
+      //   1. `local_time`: the client's current time, if the app sends it;
+      //   2. `offset` (client getTimezoneOffset, sent by every reward POST):
+      //      the user's local day derived from the server clock;
+      //   3. `local_start_time`: only when a new session starts right now;
+      //   4. the server's own day, as a last resort.
+      const todayStr =
+        dayStringFromLocalTime(local_time) ||
+        dayStringFromOffset(offset) ||
+        dayStringFromLocalTime(local_start_time) ||
+        toDayString(new Date());
+      const next = computeStreak(existingRecord, todayStr);
+      if (next.changed) {
+        updateData.streakDays = next.streakDays;
+        updateData.streakLastDate = next.streakLastDate;
       }
-      if (!todayStr) {
-        const now = new Date();
-        todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-      }
-      const [y, m, d] = todayStr.split("-").map(Number);
-      const yesterday = new Date(y, m - 1, d);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
-      const last = existingRecord?.streakLastDate ?? "";
-      if (last === todayStr) {
-        // Already counted today
-      } else if (last === yesterdayStr) {
-        updateData.streakDays = (existingRecord?.streakDays || 0) + 1;
-        updateData.streakLastDate = todayStr;
-        console.log(`✅ Streak updated (consecutive): ${updateData.streakDays} days`);
-      } else {
-        updateData.streakDays = 1;
-        updateData.streakLastDate = todayStr;
-        console.log(`✅ Streak reset/start: 1 day (last=${last || "none"})`);
-      }
+      console.log(`✅ Streak ${next.reason}: ${next.streakDays} days (today=${todayStr}, last=${existingRecord?.streakLastDate || "none"})`);
 
       // Add streak bonus to total (use updated streak if we just set it)
       const streakDaysForBonus = updateData.streakDays ?? existingRecord?.streakDays ?? 0;
