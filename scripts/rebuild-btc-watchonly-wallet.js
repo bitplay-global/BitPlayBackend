@@ -157,15 +157,35 @@ async function main() {
   }
 
   // Verify every address the app ever issued is recognised by the wallet.
-  let unknown = 0;
+  // Addresses that pre-date the xpub scheme (or were issued from another
+  // key) are imported one by one, because the API keeps returning a user's
+  // existing address. Records that are not valid Bitcoin addresses at all
+  // are reported and skipped.
+  const legacy = [], invalid = [];
+  let recognised = 0;
   for (const a of addrs) {
-    const info = await rpc('getaddressinfo', [a.address], WALLET);
-    if (!info.ismine) { unknown++; console.error(`  NOT RECOGNISED: ${a.address} (idx ${a.idx}, user ${a.userId})`); }
+    let info;
+    try { info = await rpc('getaddressinfo', [a.address], WALLET); }
+    catch (e) { invalid.push(a); console.error(`  INVALID ADDRESS: "${a.address}" (idx ${a.idx}, user ${a.userId}): ${e.message}`); continue; }
+    if (info.ismine) recognised++; else legacy.push(a);
+  }
+  if (legacy.length) {
+    const reqs = [];
+    for (const a of legacy) {
+      const { descriptor: d } = await rpc('getdescriptorinfo', [`addr(${a.address})`]);
+      reqs.push({ desc: d, timestamp });
+    }
+    const res = await rpc('importdescriptors', [reqs], WALLET);
+    res.forEach((r, i) => {
+      const a = legacy[i];
+      if (r.success) { recognised++; console.log(`  imported legacy address ${a.address} (idx ${a.idx}, user ${a.userId})`); }
+      else console.error(`  FAILED legacy import ${a.address} (idx ${a.idx}, user ${a.userId}): ${r.error?.message}`);
+    });
   }
   const utxos = await rpc('listunspent', [0, 9999999], WALLET);
-  console.log(`verified: ${addrs.length - unknown}/${addrs.length} addresses recognised; ${utxos.length} unspent output(s) visible in the retained blocks`);
+  console.log(`verified: ${recognised}/${addrs.length} addresses recognised (${legacy.length} legacy imported individually, ${invalid.length} invalid skipped); ${utxos.length} unspent output(s) visible in the retained blocks`);
   await mongoose.disconnect();
-  if (unknown) { console.error('Some addresses were not recognised: the key in .env does not match how they were derived.'); process.exit(1); }
+  if (recognised + invalid.length < addrs.length) { console.error('Some valid addresses are still not recognised; see FAILED lines above.'); process.exit(1); }
   console.log('\nDone. Restart the backend so the watcher reconnects: pm2 restart admin-panel');
 }
 
