@@ -22,6 +22,7 @@ import '../config/loadEnv.js';
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
+import readline from 'readline';
 import mongoose from 'mongoose';
 import BIP32Factory from 'bip32';
 import * as ecc from 'tiny-secp256k1';
@@ -38,12 +39,11 @@ const KEY_RE = /BTC_XPRV:\s*(xprv[1-9A-HJ-NP-Za-km-z]{90,120})/g;
 const DATE_RE = /\b(20\d\d-\d\d-\d\d)/;
 
 const seen = new Map(); // key -> { first, last, count, files:Set }
-function scanText(text, file) {
+function noteLine(line, file) {
   let m;
-  while ((m = KEY_RE.exec(text))) {
+  KEY_RE.lastIndex = 0;
+  while ((m = KEY_RE.exec(line))) {
     const key = m[1];
-    const lineStart = text.lastIndexOf('\n', m.index) + 1;
-    const line = text.slice(lineStart, text.indexOf('\n', m.index));
     const d = DATE_RE.exec(line)?.[1] ?? null;
     const e = seen.get(key) ?? { first: d, last: d, count: 0, files: new Set() };
     e.count++; e.files.add(path.basename(file));
@@ -52,17 +52,23 @@ function scanText(text, file) {
   }
 }
 
+// Stream line by line so multi-GB logs work.
+async function scanFile(p) {
+  let stream = fs.createReadStream(p);
+  if (p.endsWith('.gz')) stream = stream.pipe(zlib.createGunzip());
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  for await (const line of rl) if (line.includes('BTC_XPRV')) noteLine(line, p);
+}
+
 let filesScanned = 0;
 for (const dir of LOG_DIRS) {
   if (!fs.existsSync(dir)) { console.error(`no such dir: ${dir}`); continue; }
   for (const f of fs.readdirSync(dir)) {
     const p = path.join(dir, f);
-    if (!fs.statSync(p).isFile()) continue;
-    try {
-      const raw = fs.readFileSync(p);
-      const text = f.endsWith('.gz') ? zlib.gunzipSync(raw).toString('utf8') : raw.toString('utf8');
-      scanText(text, p); filesScanned++;
-    } catch (e) { console.error(`skip ${p}: ${e.message}`); }
+    let st; try { st = fs.statSync(p); } catch { continue; }
+    if (!st.isFile()) continue;
+    try { await scanFile(p); filesScanned++; }
+    catch (e) { console.error(`skip ${p}: ${e.message}`); }
   }
 }
 console.log(`scanned ${filesScanned} log file(s); distinct keys found: ${seen.size}`);
