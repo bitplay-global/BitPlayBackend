@@ -62,6 +62,31 @@ console.log = (...a) => { capture(...a); origLog(...a); }; console.error = (...a
 await run('private keys from env (current deployment)', { BTC_XPRV: XPRV, EVM_MNEMONIC: PHRASE });
 await run('public keys only (recommended)', { BTC_XPUB: ACCOUNT_XPUB, EVM_XPUB });
 
+// A retired address is kept but never handed out again.
+{
+  for (const k of ['BTC_XPRV', 'BTC_XPUB', 'EVM_MNEMONIC', 'EVM_XPUB', 'EVM_PRIVATE_KEY']) delete process.env[k];
+  Object.assign(process.env, { BTC_XPUB: ACCOUNT_XPUB, EVM_XPUB });
+  await WalletAddress.deleteMany({}); await DerivationCounter.deleteMany({});
+  const { default: router } = await import(`../routes/api_routes/alchemy_deposit.js?retire`);
+  const app = express(); app.use('/api/deposit-address', router);
+  const server = await new Promise(res => { const srv = app.listen(0, '127.0.0.1', () => res(srv)); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  console.log('\n--- retired addresses are replaced, not reused ---');
+  const uid = new mongoose.Types.ObjectId().toString();
+  const a = (await request(base).get(`/api/deposit-address/${uid}/BTC`)).body.address;
+  await WalletAddress.updateOne({ address: a }, { $set: { retiredAt: new Date(), retiredReason: 'test' } });
+  const b = (await request(base).get(`/api/deposit-address/${uid}/BTC`)).body.address;
+  const again = (await request(base).get(`/api/deposit-address/${uid}/BTC`)).body.address;
+  const all = (await request(base).get(`/api/deposit-address/${uid}`)).body;
+  const recs = await WalletAddress.find({ userId: uid, chain: 'btc' }).lean();
+  check('retired address is not returned again', !!a && !!b && a !== b, `${a} / ${b}`);
+  check('replacement is the next derived address', b === oldBtc(1), `${b} vs ${oldBtc(1)}`);
+  check('replacement is stable on later requests', again === b);
+  check('multi-asset endpoint returns the replacement', all.BTC === b, JSON.stringify(all));
+  check('retired record is kept for late deposits', recs.length === 2 && recs.filter(r => r.retiredAt).length === 1, `records ${recs.length}`);
+  server.close();
+}
+
 console.log = origLog; console.error = origErr;
 const secrets = [XPRV, PHRASE, ...Array.from({ length: 3 }, (_, i) => root.derivePath(`84'/0'/0'/0/${i}`).toWIF())];
 check('no key material written to the log', !logs.some(l => secrets.some(sec => l.includes(sec))), 'a secret appeared in logs');

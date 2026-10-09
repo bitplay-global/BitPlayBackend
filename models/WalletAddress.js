@@ -42,6 +42,17 @@ const walletAddressSchema = new mongoose.Schema({
     required: false,
     select: false
   },
+  // Set when the address must no longer be handed out (e.g. it was derived
+  // from a key that has since been replaced). The record is kept so the
+  // watchers still attribute late deposits to it; the deposit route skips it
+  // and issues a fresh address instead.
+  retiredAt: {
+    type: Date,
+    default: null,
+  },
+  retiredReason: {
+    type: String,
+  },
 }, { timestamps: { createdAt: "created_at" } });
 
 export default mongoose.model("WalletAddress", walletAddressSchema);

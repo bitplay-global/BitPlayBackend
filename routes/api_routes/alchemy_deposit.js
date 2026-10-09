@@ -94,8 +94,8 @@ router.get("/:userId/:asset", async (req, res) => {
     else if (asset === "BTC") chain = "btc";
     else return res.status(400).json({ error: "Unsupported asset" });
 
-    // existing?
-    const existing = await WalletAddress.findOne({ userId, asset, chain });
+    // existing? (retired addresses are kept for late deposits but never reissued)
+    const existing = await WalletAddress.findOne({ userId, asset, chain, retiredAt: null });
     if (existing) return res.json({ address: existing.address });
 
     // Never hand out an address the server cannot watch or nobody can spend.
@@ -150,8 +150,8 @@ router.get("/:userId", async (req, res) => {
       else if (asset === "BTC") chain = "btc";
       else continue;
 
-      // Check if wallet already exists
-      let existing = await WalletAddress.findOne({ userId, asset, chain });
+      // Check if wallet already exists (retired ones are never reissued)
+      let existing = await WalletAddress.findOne({ userId, asset, chain, retiredAt: null });
       if (existing) {
         results[asset] = existing.address;
         continue;
