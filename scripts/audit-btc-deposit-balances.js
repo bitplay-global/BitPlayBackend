@@ -21,9 +21,8 @@ import '../config/loadEnv.js';
 import dotenv from 'dotenv';
 import path from 'path';
 import mongoose from 'mongoose';
-import BIP32Factory from 'bip32';
-import * as ecc from 'tiny-secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
+import { resolveBtcAccount } from '../helpers/btcDepositKey.js';
 
 const argv = process.argv.slice(2);
 const envIdx = argv.indexOf('--env');
@@ -45,21 +44,18 @@ async function rpc(method, params = []) {
   return j.result;
 }
 
-const bip32 = BIP32Factory(ecc);
 const net = bitcoin.networks.bitcoin;
 const p2wpkh = n => bitcoin.payments.p2wpkh({ pubkey: Buffer.from(n.publicKey), network: net }).address;
 
-// Account key, however the env expresses it.
-let account = null, how = '';
-if (process.env.BTC_XPRV) {
-  const k = bip32.fromBase58(process.env.BTC_XPRV, net);
-  account = k.depth === 0 ? k.derivePath("84'/0'/0'").neutered() : k.neutered();
-  how = k.depth === 0 ? "BTC_XPRV root -> m/84'/0'/0'" : `BTC_XPRV depth ${k.depth} used as the account`;
-} else if (process.env.BTC_XPUB) {
-  account = bip32.fromBase58(process.env.BTC_XPUB, net); how = 'BTC_XPUB';
-}
-if (!account) { console.error('No BTC_XPRV / BTC_XPUB'); process.exit(2); }
-console.log(`account key from: ${how}`);
+// Account key, resolved like the deposit route does. BTC_XPRV wins when set,
+// so an audit against a single-key file (--env) is not blocked by a mismatched
+// BTC_XPUB lingering in .env.
+const resolved = process.env.BTC_XPRV
+  ? resolveBtcAccount({ xprv: process.env.BTC_XPRV })
+  : resolveBtcAccount({ xpub: process.env.BTC_XPUB });
+if (resolved.error) { console.error(resolved.error); process.exit(2); }
+const account = resolved.account;
+console.log(`account key from: ${resolved.source} (account m/84'/0'/0')`);
 
 await mongoose.connect(process.env.MONGODB_URI);
 const db = mongoose.connection;

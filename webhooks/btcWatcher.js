@@ -32,8 +32,21 @@ async function loadWatchedAddresses() {
   console.log(`BTC watcher: preloaded ${watched.size} addresses to watch`);
 }
 
+/**
+ * Start watching a newly issued deposit address. Besides the in-memory set
+ * used for mempool detection, the address is imported into the node's
+ * watch-only wallet: confirmations are read with `listunspent` on that
+ * wallet, so an address it doesn't know is seen but never credited.
+ * Fire-and-forget; a failure is logged and the wallet rebuild script
+ * (scripts/rebuild-btc-watchonly-wallet.js) re-imports everything.
+ */
 export function registerBtcAddress(addr) {
   watched.add(addr);
+  (async () => {
+    const { descriptor } = await rpc("getdescriptorinfo", [`addr(${addr})`]);
+    const [r] = await rpc("importdescriptors", [[{ desc: descriptor, timestamp: "now" }]]);
+    if (!r?.success) throw new Error(r?.error?.message || "import failed");
+  })().catch((e) => console.error(`BTC watcher: could not import ${addr} into the watch-only wallet: ${e.message}`));
 }
 
 // ---- helpers ----

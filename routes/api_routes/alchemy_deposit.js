@@ -3,9 +3,7 @@ import express from "express";
 import WalletAddress from "../../models/WalletAddress.js";
 import DerivationCounter from "../../models/DerivationCounter.js";
 import { ethers, Wallet as EthersWallet } from "ethers";
-import * as bitcoin from "bitcoinjs-lib";
-import BIP32Factory from "bip32";
-import * as ecc from "tiny-secp256k1";
+import { resolveBtcAccount, deriveBtcAddress } from "../../helpers/btcDepositKey.js";
 import { subscribeAddress } from "../../webhooks/alchemyWatcher.js";
 import { registerBtcAddress } from "../../webhooks/btcWatcher.js";
 
@@ -28,12 +26,15 @@ const EVM_MNEMONIC = process.env.EVM_MNEMONIC || "";
 // Account key for deriving user deposit addresses. Deriving an address needs
 // only the PUBLIC key, so set BTC_XPUB and keep the private key off the server.
 // BTC_XPRV is still accepted so existing deployments keep working until then.
+// See helpers/btcDepositKey.js for the accepted forms and the consistency check.
 //
 // A mainnet xprv used to be hardcoded here as a fallback. That key controls
 // every user's deposit address and is in git history: treat it as compromised.
-const BTC_ACCOUNT_KEY = process.env.BTC_XPUB || process.env.BTC_XPRV || "";
-if (!BTC_ACCOUNT_KEY) {
-  console.error("[Deposits] BTC_XPUB / BTC_XPRV not set: new BTC deposit addresses cannot be issued.");
+const btcKey = resolveBtcAccount({ xprv: process.env.BTC_XPRV, xpub: process.env.BTC_XPUB });
+if (btcKey.error) {
+  console.error(`[Deposits] New BTC deposit addresses are DISABLED: ${btcKey.error}`);
+} else {
+  console.log(`[Deposits] BTC deposit addresses derive from ${btcKey.source}`);
 }
 
 // init EVM wallet
@@ -48,29 +49,11 @@ if (EVM_XPUB) {
   evmSingleWallet = new EthersWallet(process.env.EVM_PRIVATE_KEY);
 }
 
-// init BTC
-const bip32 = BIP32Factory(ecc);
-const btcNetwork = bitcoin.networks.bitcoin;
-let btcRootNode = BTC_ACCOUNT_KEY ? bip32.fromBase58(BTC_ACCOUNT_KEY, btcNetwork) : null;
-
-// A public account key (xpub) cannot do the hardened steps in m/84'/0'/0', so it
-// is taken to BE that account node and only the non-hardened 0/idx is derived.
-// A private root key (xprv) derives the full path. Both give the same address
-// for the same idx, so switching BTC_XPRV -> BTC_XPUB does not move anyone's
-// deposit address.
-const BTC_KEY_IS_PUBLIC = Boolean(btcRootNode && btcRootNode.isNeutered());
-
+// Same address for the same idx whichever key form is configured, so switching
+// BTC_XPRV -> BTC_XPUB does not move anyone's deposit address.
 function deriveBtcDepositAddress(idx) {
-  if (!btcRootNode) throw new Error("BTC deposit key not configured");
-  const derivationPath = `84'/0'/0'/0/${idx}`;
-  const child = BTC_KEY_IS_PUBLIC
-    ? btcRootNode.derivePath(`0/${idx}`)
-    : btcRootNode.derivePath(derivationPath);
-  const { address } = bitcoin.payments.p2wpkh({
-    pubkey: Buffer.from(child.publicKey),
-    network: btcNetwork,
-  });
-  return { address, derivationPath };
+  if (!btcKey.account) throw new Error("BTC deposit key not configured");
+  return deriveBtcAddress(btcKey.account, idx);
 }
 
 function deriveEvmDepositAddress(idx) {
@@ -114,6 +97,12 @@ router.get("/:userId/:asset", async (req, res) => {
     // existing?
     const existing = await WalletAddress.findOne({ userId, asset, chain });
     if (existing) return res.json({ address: existing.address });
+
+    // Never hand out an address the server cannot watch or nobody can spend.
+    // Checked before taking an index so a refusal doesn't burn one.
+    if (chain === "btc" && !btcKey.account) {
+      return res.status(503).json({ error: "BTC deposits are temporarily unavailable" });
+    }
 
     const idx = await getNextIndexForChain(chain);
     let address, derivationPath;
@@ -165,6 +154,12 @@ router.get("/:userId", async (req, res) => {
       let existing = await WalletAddress.findOne({ userId, asset, chain });
       if (existing) {
         results[asset] = existing.address;
+        continue;
+      }
+
+      // BTC issuance disabled (see btcKey): still return the other assets.
+      if (chain === "btc" && !btcKey.account) {
+        results[asset] = null;
         continue;
       }
 

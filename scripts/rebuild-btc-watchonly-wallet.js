@@ -34,9 +34,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import mongoose from 'mongoose';
-import BIP32Factory from 'bip32';
-import * as ecc from 'tiny-secp256k1';
-import * as bitcoin from 'bitcoinjs-lib';
+import { resolveBtcAccount } from '../helpers/btcDepositKey.js';
 
 const argv = process.argv.slice(2);
 const APPLY = argv.includes('--apply');
@@ -74,29 +72,17 @@ async function rpc(method, params = [], wallet = null) {
   return json.result;
 }
 
+// Same resolution the deposit route uses, so the wallet watches exactly the
+// addresses the route issues. --key restricts it to one env variable.
 function accountXpub() {
-  const bip32 = BIP32Factory(ecc);
-  const net = bitcoin.networks.bitcoin;
-  const fromXpub = () => {
-    const node = bip32.fromBase58(process.env.BTC_XPUB, net);
-    if (!node.isNeutered()) throw new Error('BTC_XPUB holds a private key; put it in BTC_XPRV instead');
-    return node.toBase58();
+  const env = {
+    xprv: KEY === 'xpub' ? undefined : process.env.BTC_XPRV,
+    xpub: KEY === 'xprv' ? undefined : process.env.BTC_XPUB,
   };
-  // Same account node the deposit route derives from: m/84'/0'/0'
-  const fromXprv = () => bip32.fromBase58(process.env.BTC_XPRV, net).derivePath("84'/0'/0'").neutered().toBase58();
-
-  const haveXpub = !!process.env.BTC_XPUB, haveXprv = !!process.env.BTC_XPRV;
-  if (!haveXpub && !haveXprv) throw new Error('Neither BTC_XPUB nor BTC_XPRV is set');
-  if (KEY === 'xpub' && !haveXpub) throw new Error('--key xpub but BTC_XPUB is not set');
-  if (KEY === 'xprv' && !haveXprv) throw new Error('--key xprv but BTC_XPRV is not set');
-  if (haveXpub && haveXprv) {
-    const agree = fromXpub() === fromXprv();
-    console.log(`BTC_XPUB and BTC_XPRV describe the same account: ${agree ? 'yes' : 'NO'}`);
-    if (!agree && !KEY) throw new Error('BTC_XPUB and BTC_XPRV disagree. Run scripts/check-btc-deposit-key.js, then re-run with --key xprv or --key xpub.');
-  }
-  const use = KEY || (haveXpub ? 'xpub' : 'xprv');
-  console.log(`building descriptor from: ${use === 'xpub' ? 'BTC_XPUB' : "BTC_XPRV (account m/84'/0'/0', neutered in memory)"}`);
-  return use === 'xpub' ? fromXpub() : fromXprv();
+  const r = resolveBtcAccount(env);
+  if (r.error) throw new Error(`${r.error}${KEY ? '' : '. Run scripts/check-btc-deposit-key.js, or re-run with --key xprv|xpub.'}`);
+  console.log(`building descriptor from: ${r.source} (account m/84'/0'/0')`);
+  return r.account.toBase58();
 }
 
 async function main() {
