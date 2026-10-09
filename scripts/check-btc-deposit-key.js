@@ -31,7 +31,7 @@ const fromXprv = idx => xprvRoot ? p2wpkh(xprvRoot.derivePath(`84'/0'/0'/0/${idx
 const fromXpub = idx => xpubNode ? p2wpkh(xpubNode.derivePath(`0/${idx}`)) : null;
 
 if (xprvRoot && xpubNode) {
-  const acct = xprvRoot.derivePath("84'/0'/0'").neuter().toBase58();
+  const acct = xprvRoot.derivePath("84'/0'/0'").neutered().toBase58();
   console.log(`BTC_XPUB equals the m/84'/0'/0' account key of BTC_XPRV: ${acct === xpubNode.toBase58() ? 'YES' : 'NO'}`);
   console.log(`BTC_XPUB depth: ${xpubNode.depth} (3 = account level as expected, 0 = root key)`);
 }

@@ -83,7 +83,7 @@ function accountXpub() {
     return node.toBase58();
   };
   // Same account node the deposit route derives from: m/84'/0'/0'
-  const fromXprv = () => bip32.fromBase58(process.env.BTC_XPRV, net).derivePath("84'/0'/0'").neuter().toBase58();
+  const fromXprv = () => bip32.fromBase58(process.env.BTC_XPRV, net).derivePath("84'/0'/0'").neutered().toBase58();
 
   const haveXpub = !!process.env.BTC_XPUB, haveXprv = !!process.env.BTC_XPRV;
   if (!haveXpub && !haveXprv) throw new Error('Neither BTC_XPUB nor BTC_XPRV is set');
