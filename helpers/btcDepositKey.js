@@ -8,11 +8,10 @@
  *   BTC_XPRV  either a root key (depth 0), from which m/84'/0'/0' is derived,
  *             or an account-level private key (depth 3), used as-is.
  *
- * When both are set they must describe the same account. They once did not:
- * BTC_XPUB came from a different seed than BTC_XPRV, the route preferred
- * BTC_XPUB, and so it would have issued addresses nobody can spend. An
- * account-level BTC_XPRV was also wrongly treated as a root key. A mismatch
- * is now an error, and callers refuse to issue addresses rather than guess.
+ * When both are set they must describe the same account; a mismatch is an
+ * error, and callers refuse to issue addresses rather than guess which key
+ * holds the funds. Previously an account-level BTC_XPRV was treated as a root
+ * key, so with BTC_XPUB unset the route derived m/84'/0'/0'/84'/0'/0'/0/i.
  */
 import BIP32Factory from 'bip32';
 import * as ecc from 'tiny-secp256k1';

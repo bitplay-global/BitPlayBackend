@@ -24,6 +24,7 @@ import mongoose from 'mongoose';
 import BIP32Factory from 'bip32';
 import * as ecc from 'tiny-secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
+import { resolveBtcAccount } from '../helpers/btcDepositKey.js';
 
 const argv = process.argv.slice(2);
 const envIdx = argv.indexOf('--env');
@@ -49,11 +50,12 @@ const xpub = tryNode('BTC_XPUB', process.env.BTC_XPUB);
 if (!xprv && !xpub) { console.error('Neither BTC_XPRV nor BTC_XPUB is set/parseable in that file'); process.exit(2); }
 if (xprv) console.log(`BTC_XPRV: depth ${xprv.depth} (0 = root/master key, 3 = account key), private=${!xprv.isNeutered()}`);
 if (xpub) console.log(`BTC_XPUB: depth ${xpub.depth} (3 = account key as expected), private=${!xpub.isNeutered()}`);
-if (xprv && xpub) {
-  const acct = xprv.derivePath("84'/0'/0'").neutered().toBase58();
-  console.log(`BTC_XPUB equals the m/84'/0'/0' account key of BTC_XPRV: ${acct === xpub.toBase58() ? 'YES' : 'NO'}`);
-}
-console.log(`route derives new addresses from: ${process.env.BTC_XPUB ? 'BTC_XPUB' : 'BTC_XPRV'}`);
+// Same resolution the deposit route uses (root or account-level xprv).
+const resolved = resolveBtcAccount({ xprv: process.env.BTC_XPRV, xpub: process.env.BTC_XPUB });
+if (xprv && xpub) console.log(`BTC_XPUB and BTC_XPRV describe the same account: ${resolved.error ? 'NO' : 'YES'}`);
+console.log(resolved.error
+  ? `route would REFUSE to issue BTC addresses: ${resolved.error}`
+  : `route derives new addresses from: ${resolved.source}`);
 
 // Derivation layouts to test. "route" is what alchemy_deposit.js does.
 const layouts = [];
@@ -105,8 +107,8 @@ if (matched.length) {
 console.log(`unmatched: ${unmatched.length} of ${addrs.length}`);
 if (unmatched.length && unmatched.length <= 70) for (const a of unmatched) console.log(`  idx ${String(a.idx).padStart(3)}  ${a.address}  (${when(a)})`);
 
-if (xprv) {
+if (xprv && !resolveBtcAccount({ xprv: process.env.BTC_XPRV }).error) {
   console.log(`\nIf BTC_XPRV is the key to keep, BTC_XPUB must be its account key (public, safe to copy):`);
-  console.log(`BTC_XPUB=${xprv.derivePath("84'/0'/0'").neutered().toBase58()}`);
+  console.log(`BTC_XPUB=${resolveBtcAccount({ xprv: process.env.BTC_XPRV }).account.toBase58()}`);
 }
 await mongoose.disconnect();
