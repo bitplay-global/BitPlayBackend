@@ -283,7 +283,7 @@ async function handleRawTx(txHex) {
 // ---- block handler ----
 async function handleRawBlock(_blockHex) {
   // simple strategy: check the last N uncredited deps each block
-  const pending = await Deposit.find({ chain: "btc", credited: false }).limit(200).lean();
+  const pending = await Deposit.find({ chain: "btc", credited: false, orphaned: { $ne: true } }).limit(200).lean();
   const txids = [...new Set(pending.map((d) => d.txHash))];
   if (txids.length) await updateConfirmationsForPending(txids);
 }

@@ -47,6 +47,19 @@ const depositSchema = new mongoose.Schema(
     creditedAt: {
       type: Date,
     },
+    // Set by scripts/credit-btc-deposit.js --orphan when a confirmed deposit
+    // can never be credited (owner account no longer exists). The watcher
+    // stops re-checking it; the coins remain on the deposit address.
+    orphaned: {
+      type: Boolean,
+      default: false,
+    },
+    reviewNote: {
+      type: String,
+    },
+    reviewedAt: {
+      type: Date,
+    },
 
     // --- Sweeper fields ---
     swept: {

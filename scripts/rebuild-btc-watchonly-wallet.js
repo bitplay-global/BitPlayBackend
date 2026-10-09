@@ -38,10 +38,18 @@ import BIP32Factory from 'bip32';
 import * as ecc from 'tiny-secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 
-const args = new Set(process.argv.slice(2));
-const APPLY = args.has('--apply');
-const RENAME_OLD = args.has('--rename-old');
-for (const a of args) if (!['--apply', '--rename-old'].includes(a)) { console.error(`Unknown option ${a}`); process.exit(2); }
+const argv = process.argv.slice(2);
+const APPLY = argv.includes('--apply');
+const RENAME_OLD = argv.includes('--rename-old');
+// --key xprv|xpub: which env key to build the descriptor from when both are
+// set. Default xpub (what the deposit route prefers). Run
+// scripts/check-btc-deposit-key.js first if the two disagree.
+const KEY = argv.includes('--key') ? argv[argv.indexOf('--key') + 1] : null;
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === '--key') { i++; if (!['xprv', 'xpub'].includes(argv[i])) { console.error('--key must be xprv or xpub'); process.exit(2); } continue; }
+  if (!['--apply', '--rename-old'].includes(a)) { console.error(`Unknown option ${a}`); process.exit(2); }
+}
 
 const WALLET = process.env.BTC_WALLET || 'watchonly';
 const RPC_HOST = process.env.BTC_RPC_HOST || '127.0.0.1';
@@ -69,17 +77,26 @@ async function rpc(method, params = [], wallet = null) {
 function accountXpub() {
   const bip32 = BIP32Factory(ecc);
   const net = bitcoin.networks.bitcoin;
-  if (process.env.BTC_XPUB) {
+  const fromXpub = () => {
     const node = bip32.fromBase58(process.env.BTC_XPUB, net);
     if (!node.isNeutered()) throw new Error('BTC_XPUB holds a private key; put it in BTC_XPRV instead');
     return node.toBase58();
+  };
+  // Same account node the deposit route derives from: m/84'/0'/0'
+  const fromXprv = () => bip32.fromBase58(process.env.BTC_XPRV, net).derivePath("84'/0'/0'").neuter().toBase58();
+
+  const haveXpub = !!process.env.BTC_XPUB, haveXprv = !!process.env.BTC_XPRV;
+  if (!haveXpub && !haveXprv) throw new Error('Neither BTC_XPUB nor BTC_XPRV is set');
+  if (KEY === 'xpub' && !haveXpub) throw new Error('--key xpub but BTC_XPUB is not set');
+  if (KEY === 'xprv' && !haveXprv) throw new Error('--key xprv but BTC_XPRV is not set');
+  if (haveXpub && haveXprv) {
+    const agree = fromXpub() === fromXprv();
+    console.log(`BTC_XPUB and BTC_XPRV describe the same account: ${agree ? 'yes' : 'NO'}`);
+    if (!agree && !KEY) throw new Error('BTC_XPUB and BTC_XPRV disagree. Run scripts/check-btc-deposit-key.js, then re-run with --key xprv or --key xpub.');
   }
-  if (process.env.BTC_XPRV) {
-    const root = bip32.fromBase58(process.env.BTC_XPRV, net);
-    // Same account node the deposit route derives from: m/84'/0'/0'
-    return root.derivePath("84'/0'/0'").neuter().toBase58();
-  }
-  throw new Error('Neither BTC_XPUB nor BTC_XPRV is set');
+  const use = KEY || (haveXpub ? 'xpub' : 'xprv');
+  console.log(`building descriptor from: ${use === 'xpub' ? 'BTC_XPUB' : "BTC_XPRV (account m/84'/0'/0', neutered in memory)"}`);
+  return use === 'xpub' ? fromXpub() : fromXprv();
 }
 
 async function main() {

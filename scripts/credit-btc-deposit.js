@@ -11,11 +11,15 @@
  *
  *   node scripts/credit-btc-deposit.js --tx <txid>                     # dry run
  *   node scripts/credit-btc-deposit.js --tx <txid> --confirmations 6 --apply
+ *   node scripts/credit-btc-deposit.js --tx <txid> --orphan "owner account deleted" --apply
  *
  * It finds the deposit record, resolves the owner from the deposit address,
  * marks the record credited, and adds the amount to the user's BTC_DEPOSIT
  * balance exactly as webhooks/btcWatcher.js would have. Nothing is swept and
  * no subscription plan is marked paid; do those by hand if they apply.
+ *
+ * --orphan records that the deposit can never be credited (no owner exists)
+ * so the watcher stops re-checking it. No balance is touched.
  */
 import '../config/loadEnv.js';
 import mongoose from 'mongoose';
@@ -27,10 +31,12 @@ function parseArgs(argv) {
     if (k === '--tx') { a.tx = v; i++; }
     else if (k === '--confirmations') { a.confirmations = Number(v); i++; }
     else if (k === '--apply') a.apply = true;
+    else if (k === '--orphan') { a.orphan = v; i++; }
     else throw new Error(`Unknown option: ${k}`);
   }
   if (!/^[0-9a-f]{64}$/i.test(a.tx || '')) throw new Error('Give --tx <64-hex txid>');
-  if (a.apply && !(Number.isInteger(a.confirmations) && a.confirmations >= 1)) throw new Error('--apply needs --confirmations <n>, verified on a block explorer');
+  if (a.orphan !== undefined && !a.orphan) throw new Error('--orphan needs a short note, e.g. --orphan "owner account deleted"');
+  if (a.apply && !a.orphan && !(Number.isInteger(a.confirmations) && a.confirmations >= 1)) throw new Error('--apply needs --confirmations <n>, verified on a block explorer');
   return a;
 }
 
@@ -48,6 +54,15 @@ async function main() {
   console.log(`check  : https://mempool.space/tx/${dep.txHash}`);
 
   if (dep.credited) { console.log('Already credited; nothing to do.'); return mongoose.disconnect(); }
+  if (dep.orphaned) console.log(`note   : already marked orphaned (${dep.reviewNote || 'no note'})`);
+
+  if (a.orphan) {
+    if (!a.apply) { console.log(`\nDry run. Re-run with --apply to mark orphaned: "${a.orphan}"`); return mongoose.disconnect(); }
+    const r = await deposits.updateOne({ _id: dep._id, credited: { $ne: true } },
+      { $set: { orphaned: true, reviewNote: a.orphan, reviewedAt: new Date() } });
+    console.log(r.modifiedCount === 1 ? 'marked orphaned; the watcher will no longer re-check it' : 'not changed (already credited or already orphaned)');
+    return mongoose.disconnect();
+  }
 
   let rawOwner = dep.user;
   if (!rawOwner) {
