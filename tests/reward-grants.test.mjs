@@ -183,6 +183,7 @@ check('May payout e9385464 pattern (0.9 BTC day): flagged', x && x.impossibleDay
 x = unexplainedBalance({ dayAmounts: [2.5e-8], purchasedGh: 0, referralBtc: 0, depositBtc: 0, balanceBtc: 0.01000003, paidOutBtc: 0 });
 check('0.01 BTC on 2.5e-8 mined: flagged', x && x.excess > 0.0099);
 check('purchased power raises the day cap', unexplainedBalance({ dayAmounts: [1e-5], purchasedGh: 20000, referralBtc: 0, depositBtc: 0, balanceBtc: 1e-5, paidOutBtc: 0 }) === null);
+check('excess under one day of mining is not flagged', unexplainedBalance({ dayAmounts: [8.5e-7, 8.5e-7], purchasedGh: 0, referralBtc: 0, depositBtc: 0, balanceBtc: 0, paidOutBtc: 1.746e-6 + 4.2e-7 }) === null);
 check('deposits and referrals explain a balance', unexplainedBalance({ dayAmounts: [], purchasedGh: 0, referralBtc: 1e-6, depositBtc: 0.002, balanceBtc: 0.002001, paidOutBtc: 0 }) === null);
 
 console.log('\n--- withdrawal warnings: against the database ---');

@@ -65,7 +65,9 @@ export function unexplainedBalance({ dayAmounts, purchasedGh, referralBtc, depos
   const explained = mined + num(referralBtc) + num(depositBtc);
   const held = num(balanceBtc) + num(paidOutBtc);
   const excess = held - explained;
-  if (excess <= Math.max(TOLERANCE_BTC, explained * 0.01)) return null;
+  // Less than one free day of mining is noise (a day settled twice, a small
+  // support credit), not a sign of an inflated balance.
+  if (excess <= Math.max(TOLERANCE_BTC, explained * 0.01, dayCapBtc(0))) return null;
   return { held, explained, excess, impossibleDays, biggestDay };
 }
 
