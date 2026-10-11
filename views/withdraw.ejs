@@ -46,6 +46,7 @@
             <th>To Address</th>
             <th>Amount</th>
             <th>User's Current Balance</th>
+            <th>Checks</th>
             <th>Status</th>
             <th>TxHash</th>
             <th>Mobile Meta</th>
@@ -55,7 +56,16 @@
         </thead>
         <tbody id="withdrawalsTbody">
           <% withdrawals.forEach((w, index) => { %>
-            <tr data-id="<%= w._id %>">
+            <%
+              const risk = w.risk || {};
+              const unx = risk.unexplained;
+              const shared = risk.sharedAddress;
+              const btc8 = (n) => Number(n || 0).toFixed(8);
+              const warnings = [];
+              if (unx) warnings.push('Unexplained balance: holds or was paid ' + btc8(unx.held) + ' BTC, its history explains ' + btc8(unx.explained) + ' BTC.');
+              if (shared) warnings.push('Payout address also used by ' + shared.accounts.length + ' other account(s)' + (shared.sentToOthers ? ', already paid to them ' + shared.sentToOthers + ' time(s)' : '') + '.');
+            %>
+            <tr data-id="<%= w._id %>" data-warnings="<%= warnings.join(' ') %>">
               <td><%= (page - 1) * limit + index + 1 %></td>
               <td><%= w.userName || '-' %></td>
               <td><%= w.userEmail || '-' %></td>
@@ -77,6 +87,33 @@
                   <span title="Mined: <%= w.userBalanceMinedBtc %> BTC / Deposit: <%= w.userBalanceDepositBtc %> BTC"><%= w.userBalanceBtc %> BTC</span>
                 <% } else { %>
                   <span class="text-muted">-</span>
+                <% } %>
+              </td>
+              <td class="small" style="min-width: 220px;">
+                <% if (!w.risk) { %>
+                  <span class="text-muted">-</span>
+                <% } else if (!unx && !shared) { %>
+                  <span class="text-success">&#10003; No warnings</span>
+                <% } %>
+                <% if (unx) { %>
+                  <span class="badge bg-danger" title="Current balance plus everything already paid out is more than this account's mining days (each capped at what a free account plus its purchased power can mine), referral rewards and deposits explain. Seen on accounts whose balance was inflated by the old app-trusted mining code.">&#9888; UNEXPLAINED BALANCE</span>
+                  <div class="mt-1">
+                    Holds/paid <strong><%= btc8(unx.held) %></strong> BTC; history explains <%= btc8(unx.explained) %> BTC.
+                    <% if (unx.impossibleDays > 0) { %>
+                      <br><span class="text-danger"><%= unx.impossibleDays %> impossible mining day(s), biggest <%= btc8(unx.biggestDay) %> BTC.</span>
+                    <% } %>
+                  </div>
+                <% } %>
+                <% if (shared) { %>
+                  <div class="<%= unx ? 'mt-2' : '' %>">
+                    <span class="badge bg-warning text-dark" title="Other accounts have requested withdrawals to this same address. One person farming several accounts looks like this.">&#9888; ADDRESS SHARED: <%= shared.accounts.length %> OTHER ACCOUNT<%= shared.accounts.length === 1 ? '' : 'S' %></span>
+                    <ul class="mb-0 ps-3 mt-1">
+                      <% shared.accounts.slice(0, 5).forEach((a) => { %>
+                        <li><%= a.email || a.userId %>: <%= a.requests %> request<%= a.requests === 1 ? '' : 's' %><%= a.sent ? ', ' + a.sent + ' paid' : '' %></li>
+                      <% }) %>
+                      <% if (shared.accounts.length > 5) { %><li>and <%= shared.accounts.length - 5 %> more</li><% } %>
+                    </ul>
+                  </div>
                 <% } %>
               </td>
               <td><span class="badge bg-<%= w.status === 'PENDING' ? 'warning' : w.status === 'APPROVED' ? 'info' : w.status === 'SENT' ? 'primary' : w.status === 'CONFIRMED' ? 'success' : 'danger' %>"><%= w.status %></span></td>
@@ -227,7 +264,11 @@
       hideWithdrawalError();
       var row = btn.closest('tr');
       var id = row.dataset.id;
-      if (!confirm('Approve this withdrawal?')) return;
+      var warnings = row.dataset.warnings || '';
+      var question = warnings
+        ? 'WARNING. ' + warnings + '\n\nApprove this withdrawal anyway?'
+        : 'Approve this withdrawal?';
+      if (!confirm(question)) return;
       // One request per click: lock this row's buttons until the answer comes
       // back (the server also refuses a second simultaneous approval).
       var rowButtons = row.querySelectorAll('.approve-btn, .reject-btn');

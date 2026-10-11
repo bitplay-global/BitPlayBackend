@@ -23,6 +23,7 @@ import MiningSession from '../models/MiningSession.js';
 import BalanceHistory from '../models/BalanceHistory.js';
 import { sendCustomNotification, sendBulkNotifications } from '../services/notificationService.js';
 import AdMultiplierPrivilege from '../models/AdMultiplierPrivilege.js';
+import { assessWithdrawals } from '../helpers/withdrawalRisk.js';
 import { escapeRegex } from "../helpers/escapeRegex.js";
 import { safeAdminNext, ADMIN_HOME } from '../helpers/adminRedirect.js';
 
@@ -1310,6 +1311,15 @@ router.get("/withdrawals", requireAuth, async (req, res) => {
       console.warn("[Admin withdrawals] BTC price fetch failed:", e?.message ?? e);
     }
 
+    // Risk warnings (unexplained balance, payout address shared with other
+    // accounts). Never blocks the page: on failure the rows show no checks.
+    let risk = new Map();
+    try {
+      risk = await assessWithdrawals(withdrawals);
+    } catch (e) {
+      console.error("[Admin withdrawals] risk checks failed:", e?.message ?? e);
+    }
+
     const withdrawalsEnriched = withdrawals.map((w) => {
       const rawAmount = toDecimalStr(w.amountNumeric) ?? "0";
       const usdLike = ["USDT", "USDC", "USD"].includes(String(w.asset || "").toUpperCase());
@@ -1347,7 +1357,8 @@ router.get("/withdrawals", requireAuth, async (req, res) => {
         userBalanceBtc: userBalance != null ? userBalance.total.toFixed(16) : null,
         userBalanceMinedBtc: userBalance != null ? userBalance.mined.toFixed(16) : null,
         userBalanceDepositBtc: userBalance != null ? userBalance.deposit.toFixed(16) : null,
-        exceedsBalance
+        exceedsBalance,
+        risk: risk.get(String(w._id)) || null
       };
     });
 
