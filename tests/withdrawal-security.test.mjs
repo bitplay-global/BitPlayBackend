@@ -175,6 +175,44 @@ res = await request(base).post('/api/withdrawals/create-speed-payment').send({
 check('a request with no mobile headers and no session is refused', res.status === 401 || res.status === 403, `status ${res.status}`);
 check('and pays nothing', speedCalls.length === 0);
 
+console.log('\n--- Simultaneous identical requests create one withdrawal (2026-10-10: four in 49 ms) ---');
+await Withdrawal.init(); // make sure the one_pending_per_user index is built
+const idx = await Withdrawal.collection.indexes();
+check('one_pending_per_user index exists, unique, PENDING only',
+  idx.some(i => i.name === 'one_pending_per_user' && i.unique && i.partialFilterExpression?.status === 'PENDING'), JSON.stringify(idx.map(i => i.name)));
+
+await reset();
+const burst = await Promise.all(Array.from({ length: 4 }, () =>
+  request(base).post('/api/withdrawals').set(MOBILE).send({
+    userId: USER, toAddress: ADDRESS, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT,
+  })));
+const codes = burst.map(r => r.status).sort();
+check('POST / x4 at once: exactly one accepted', codes.filter(c => c === 201).length === 1, `statuses ${codes}`);
+check('POST / x4 at once: the rest get "already pending" (409)', codes.filter(c => c === 409).length === 3, `statuses ${codes}`);
+check('POST / x4 at once: one PENDING withdrawal stored', (await Withdrawal.countDocuments({ userId: USER, status: 'PENDING' })) === 1);
+check('409 names the pending withdrawal', burst.filter(r => r.status === 409).every(r => r.body?.pendingWithdrawalId), JSON.stringify(burst.find(r => r.status === 409)?.body));
+
+await reset();
+const lnBurst = await Promise.all(Array.from({ length: 4 }, () =>
+  request(base).post('/api/withdrawals/create-speed-payment').set(MOBILE).send({
+    amount: USD_AMOUNT, baseAmount: BTC_AMOUNT, defaultAmountNumeric: BTC_AMOUNT,
+    currency: 'USD', target_currency: 'USDT', speed_wallet_address: ADDRESS,
+    metadata: { user_id: USER },
+  })));
+const lnCodes = lnBurst.map(r => r.status).sort();
+check('Lightning x4 at once: exactly one accepted', lnCodes.filter(c => c === 200).length === 1, `statuses ${lnCodes}`);
+check('Lightning x4 at once: the rest get "already pending" (409)', lnCodes.filter(c => c === 409).length === 3, `statuses ${lnCodes} ${JSON.stringify(lnBurst.find(r => r.status !== 200 && r.status !== 409)?.body || {}).slice(0, 160)}`);
+check('Lightning x4 at once: one PENDING withdrawal stored', (await Withdrawal.countDocuments({ userId: USER, status: 'PENDING' })) === 1);
+const bal = await Balance.findOne({ user: USER }).lean();
+check('Lightning x4 at once: balance reserved exactly once', Number(bal.BTC_DEPOSIT.toString()).toFixed(8) === (0.01 - BTC_AMOUNT).toFixed(8), `BTC_DEPOSIT ${bal.BTC_DEPOSIT}`);
+check('Lightning burst pays nothing', speedCalls.length === 0);
+
+await reset();
+res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: ADDRESS, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
+await Withdrawal.updateOne({ _id: res.body?.withdrawal?._id }, { $set: { status: 'FAILED' } });
+res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: ADDRESS, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
+check('after a rejected withdrawal, a new one can be requested', res.status === 201, `status ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 console.log(`  payout attempts across the whole run: ${totalPayoutAttempts} (expected 1 -- the single admin approval)`);
 

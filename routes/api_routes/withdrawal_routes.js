@@ -176,6 +176,31 @@ function getSpeedAuthHeader() {
 }
 
 /**
+ * True when creating a withdrawal failed because another request for the
+ * same user was being created at the same moment: the one_pending_per_user
+ * unique index (duplicate key, 11000) or, inside the Lightning route's
+ * transaction, a write conflict with that concurrent transaction (112 /
+ * TransientTransactionError).
+ */
+function isConcurrentWithdrawalError(err) {
+  if (!err) return false;
+  if (err.code === 11000 || err.code === 112) return true;
+  const labels = err.errorLabels || err.errorLabelSet;
+  if (labels && (Array.isArray(labels) ? labels : [...labels]).includes("TransientTransactionError")) return true;
+  return /E11000|WriteConflict/i.test(String(err.message || ""));
+}
+
+/** The same 409 the routes already return when a pending withdrawal exists. */
+async function pendingConflict(res, userId, route) {
+  const existing = await Withdrawal.findOne({ userId: String(userId), status: "PENDING" }).select("_id").lean().catch(() => null);
+  console.warn(`[withdrawals] duplicate simultaneous request refused for user ${userId} (${route})`);
+  return res.status(409).json({
+    error: "You already have a pending withdrawal request. Please wait for it to be processed before creating a new one.",
+    pendingWithdrawalId: existing?._id,
+  });
+}
+
+/**
  * Helper function to safely deduct balance with transaction locks
  * @param {string} userId - User ID
  * @param {string|number} baseAmount - Amount to deduct from BTC_DEPOSIT (will be converted to string for precision)
@@ -512,16 +537,26 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
       }
     }
 
-    const withdrawal = await Withdrawal.create({
-      userId,
-      asset,
-      chain,
-      toAddress,
-      amountNumeric,
-      defaultAmountNumeric: mongoose.Types.Decimal128.fromString(btcNum.toFixed(16)),
-      mobileHeadersValid: Boolean(req.mobileAccessMeta?.mobileHeadersValid),
-      mobileAccessMeta: req.mobileAccessMeta || null,
-    });
+    let withdrawal;
+    try {
+      withdrawal = await Withdrawal.create({
+        userId,
+        asset,
+        chain,
+        toAddress,
+        amountNumeric,
+        defaultAmountNumeric: mongoose.Types.Decimal128.fromString(btcNum.toFixed(16)),
+        mobileHeadersValid: Boolean(req.mobileAccessMeta?.mobileHeadersValid),
+        mobileAccessMeta: req.mobileAccessMeta || null,
+      });
+    } catch (createErr) {
+      // A simultaneous request for the same user got in first (see the
+      // one_pending_per_user index on the Withdrawal model).
+      if (isConcurrentWithdrawalError(createErr)) {
+        return pendingConflict(res, userId, "POST /withdrawals");
+      }
+      throw createErr;
+    }
 
 
     logWithdrawPost("request_created_success", {
@@ -1165,6 +1200,11 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
       });
     } catch (paymentError) {
       await session.abortTransaction();
+      // A simultaneous request for the same user won: the transaction (and its
+      // balance deduction) is rolled back and this one is reported as a duplicate.
+      if (isConcurrentWithdrawalError(paymentError)) {
+        return pendingConflict(res, metadata.user_id, "POST /withdrawals/create-speed-payment");
+      }
       console.error("Payment processing failed:", paymentError);
       if (paymentError.message.includes("Insufficient BTC_DEPOSIT balance")) {
         return res.status(400).json({

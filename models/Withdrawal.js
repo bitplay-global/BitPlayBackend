@@ -71,4 +71,14 @@ const withdrawalSchema = new mongoose.Schema({
   },
 }, { timestamps: { createdAt: "created_at", updatedAt: true } });
 
+// At most one PENDING withdrawal per user, enforced by the database. The
+// routes also check for an existing pending request first, but that check and
+// the insert are separate steps: on 2026-10-10 an app firing several requests
+// at once created four identical PENDING withdrawals in 49 ms. Partial, so
+// FAILED/SENT/CONFIRMED withdrawals never block a new request.
+withdrawalSchema.index(
+  { userId: 1 },
+  { unique: true, partialFilterExpression: { status: "PENDING" }, name: "one_pending_per_user" }
+);
+
 export default mongoose.model("Withdrawal", withdrawalSchema);
