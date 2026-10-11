@@ -77,6 +77,14 @@ const UserMiningSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // Daily reward limits, kept by the server (helpers/rewardGrants.js). Each
+  // *Day is the user's local day (YYYY-MM-DD) its counter belongs to.
+  startRewardDay: { type: String, default: null },  // mining-start reward granted
+  adCountDay: { type: String, default: null },      // day of rewarded_ads_watched
+  privilegeAdsDay: { type: String, default: null },
+  privilegeAdsToday: { type: Number, default: 0, min: 0 },
+  gameGhDay: { type: String, default: null },
+  gameGhToday: { type: Number, default: 0, min: 0 },  // GH/s from games, spins, daily rewards, trading
   // NEW: Loss Tracking
   lossTracking: {
     daily_ads_watched: {

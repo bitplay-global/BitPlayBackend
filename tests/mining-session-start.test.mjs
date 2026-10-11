@@ -85,7 +85,10 @@ check('ad reward still added', r.claimedHashpower === 5.5, `claimed ${r.claimedH
 
 console.log('\n--- ad_cap_reached tells the app apart from a normal 0-reward response ---');
 u = uid(); now = Date.now();
-await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 60 });
+await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 0 });
+// The ad count is the server's own (helpers/rewardGrants.js); the app can no
+// longer set it, so the 60 already watched today is put in the record.
+await Mining.updateOne({ user: u }, { $set: { rewarded_ads_watched: 60, adCountDay: todayIst() } });
 let res = await post({ user_id: u, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: null, rewarded_ads_watched: 61 });
 check('claim past the cap: ad_cap_reached is true', res.body.ad_cap_reached === true, JSON.stringify(res.body.ad_cap_reached));
 check('and grants nothing', res.body.mining_details.claimedHashpower === 0, res.body.mining_details.claimedHashpower);

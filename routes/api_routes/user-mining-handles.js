@@ -3,7 +3,11 @@ import UserMiningDetail from "../../models/UserMiningDetails.js";
 import Balance from "../../models/Balance.js";
 import DailyFreeMiner from "../../models/DailyMiner.js";
 import AdMultiplierPrivilege from "../../models/AdMultiplierPrivilege.js";
+import DailyReward from "../../models/DailyReward.js";
 import { computeStreak, dayStringFromLocalTime, dayStringFromOffset, toDayString } from "../../helpers/streak.js";
+import {
+  decideGrant, applyGameBudget, adCounter, privilegeGhFromRows, DEFAULT_MAX_GAME_GRANT_GH,
+} from "../../helpers/rewardGrants.js";
 import {
   getUserLocalDateStr,
   getSessionStartDateStrFromLocalStart,
@@ -17,9 +21,8 @@ const router = express.Router();
 
 const BTC_PER_HASHPOWER_PER_SEC = 0.0000000000000070;
 const MAX_MINING_DURATION_MS = 24 * 60 * 60 * 1000;
-/** Max rewarded-video claims/day on the regular (flat 5.5 Gh/s) track — must match the client's
- *  MAX_VIDEO_CLAIMS_PER_TRACK_PER_DAY in HomeScreen.tsx. */
-const MAX_REWARDED_ADS_PER_TRACK = 60;
+// The regular (flat 5.5 Gh/s) ad track's daily limit is MAX_REWARDED_ADS_PER_DAY
+// in helpers/rewardGrants.js.
 /** Max claims/day on the Super Ad Miner (thirty_gh, privilege-boosted) track — must match the
  *  client's MAX_SUPER_AD_MINER_CLAIMS_PER_DAY in HomeScreen.tsx. */
 const MAX_SUPER_AD_MINER_CLAIMS_PER_DAY = 30;
@@ -27,6 +30,37 @@ const MAX_SUPER_AD_MINER_CLAIMS_PER_DAY = 30;
  *  BASE_HASHPOWER_PER_AD in HomeScreen.tsx. */
 const BASE_HASHPOWER_PER_AD = 5.5;
 // const MAX_MINING_DURATION_MS = 10 * 60 * 1000;
+
+/** Trading game win, GH/s. The app grants 5; claims are capped here. */
+const MAX_TRADING_WIN_GH = 10;
+
+// Largest single game/daily-reward grant: the biggest DailyReward an admin has
+// configured (the Daily Rewards screen sends that amount), at least 10.
+let maxGameGrantCache = { value: DEFAULT_MAX_GAME_GRANT_GH, at: 0 };
+async function maxGameGrantGh() {
+  if (Date.now() - maxGameGrantCache.at < 5 * 60 * 1000) return maxGameGrantCache.value;
+  try {
+    const top = await DailyReward.findOne({}, { amount: 1 }).sort({ amount: -1 }).lean();
+    const amount = Number(top?.amount);
+    maxGameGrantCache = {
+      value: Math.max(DEFAULT_MAX_GAME_GRANT_GH, Number.isFinite(amount) ? amount : 0),
+      at: Date.now(),
+    };
+  } catch (err) {
+    console.warn("Could not read daily reward amounts:", err.message);
+  }
+  return maxGameGrantCache.value;
+}
+
+/** The user's local day for a request: same sources, same order, as the streak. */
+function requestDayString({ local_time, offset, local_start_time }) {
+  return (
+    dayStringFromLocalTime(local_time) ||
+    dayStringFromOffset(offset) ||
+    dayStringFromLocalTime(local_start_time) ||
+    toDayString(new Date())
+  );
+}
 
 const isSameLocalDay = (date1, date2) =>
   date1.getFullYear() === date2.getFullYear() &&
@@ -381,7 +415,9 @@ router.post("/", async (req, res) => {
       local_time,
       offset,
       timezone,
-      stock_game_bonus
+      // stock_game_bonus is no longer accepted here: the app never sent it,
+      // and any number written straight in became mining power. It only
+      // grows through /trading-claim.
     } = req.body;
 
     if (!user_id) {
@@ -396,18 +432,47 @@ router.post("/", async (req, res) => {
         ? mining_isactive
         : (existingRecord?.mining_isactive ?? false);
 
-    // Cap ad counters and strip fraudulent hashpower when daily cap already reached.
-    // (thirty_gh's cappedThirtyGh is fully recomputed below with strict +1 validation —
-    // this Math.min is only the fallback for the regular rewarded_ads_watched track.)
-    let cappedRewarded = rewarded_ads_watched;
     let cappedThirtyGh = thirty_gh_rewarded_ads_watched;
     // Set when a claim is refused for having already hit the daily ad cap on its
     // track, so the response can tell the app apart from a real grant of 0 --
     // otherwise this looked identical to a normal successful call and the app
     // had no way to show "come back tomorrow" instead of a dead-looking button.
     let adCapReached = false;
-    if (typeof rewarded_ads_watched === "number") {
-      cappedRewarded = Math.min(rewarded_ads_watched, MAX_REWARDED_ADS_PER_TRACK);
+
+    // The user's local day, for the streak and the daily reward limits.
+    const todayStr = requestDayString({ local_time, offset, local_start_time });
+
+    // How much of the requested `hashpower` is actually granted is decided by
+    // the server (helpers/rewardGrants.js); the app's number is only a request.
+    // The regular ad counter is the server's too: the app's count no longer
+    // overwrites it.
+    let grant = null;
+    if (typeof thirty_gh_rewarded_ads_watched !== "number") {
+      const legacyDay = existingRecord?.updatedAt
+        ? getLocalDateStrAt(new Date(existingRecord.updatedAt).getTime(),
+          existingRecord.timezone, existingRecord.offset)
+        : null;
+      const ads = adCounter(existingRecord, todayStr, legacyDay);
+      // A new day starts the regular ad count again, whatever the request is.
+      if (existingRecord && ads.day !== existingRecord.adCountDay) {
+        updateData.adCountDay = ads.day;
+        updateData.rewarded_ads_watched = ads.used;
+      }
+      if (typeof hashpower === "number" && hashpower > 0) {
+        const privilegeGh = typeof req.body.privilege_ads_watched === "number"
+          ? privilegeGhFromRows(await AdMultiplierPrivilege.find({
+            user: user_id, status: "completed", expires_at: { $gt: new Date() },
+          }, { tier: 1 }).lean())
+          : [];
+        grant = decideGrant(req.body, existingRecord, {
+          today: todayStr, privilegeGh, legacyDay, maxGameGrant: await maxGameGrantGh(),
+        });
+        Object.assign(updateData, grant.set);
+        if (grant.adCapReached) adCapReached = true;
+        if (grant.granted < grant.requested) {
+          console.warn(`[RewardGrant] user ${user_id} ${grant.kind}: asked ${grant.requested}, granted ${grant.granted} (${grant.reason})`);
+        }
+      }
     }
 
     // DISABLED: Migration logic removed - loss tracking is no longer active
@@ -443,23 +508,13 @@ router.post("/", async (req, res) => {
     if (typeof hashpower === "number" || typeof thirty_gh_rewarded_ads_watched === "number") {
       const currentPurchased = existingRecord?.purchasedHashpower || 0;
       const currentClaimed = existingRecord?.claimedHashpower || 0;
-      // Always treat incoming hashpower as the amount to add to claimed (unless ad cap blocks it)
-      let claimedToAdd = typeof hashpower === "number" ? hashpower : 0;
+      // Only what the server granted is added, never the requested amount.
+      let claimedToAdd = grant ? grant.granted : 0;
       if (typeof thirty_gh_rewarded_ads_watched === "number") {
         // Server-computed reward replaces whatever the client sent for this track.
         claimedToAdd = thirtyGhServerReward;
         if (!thirtyGhIsValidClaim && (existingRecord?.thirty_gh_rewarded_ads_watched || 0) >= MAX_SUPER_AD_MINER_CLAIMS_PER_DAY) {
           adCapReached = true;
-        }
-      } else if (claimedToAdd > 0) {
-        if (typeof rewarded_ads_watched === "number") {
-          const prev = existingRecord?.rewarded_ads_watched || 0;
-          // First track: ~5.5 Gh/s per video — do not block daily reward (25 Gh/s) or other large grants
-          const isFivePointFiveAd = claimedToAdd <= 6 && claimedToAdd >= 5;
-          if (prev >= MAX_REWARDED_ADS_PER_TRACK && isFivePointFiveAd) {
-            claimedToAdd = 0;
-            adCapReached = true;
-          }
         }
       }
       const newClaimed = currentClaimed + claimedToAdd;
@@ -467,18 +522,13 @@ router.post("/", async (req, res) => {
 
       // Update streak on a reward claim. The day must be the USER's local
       // calendar day, the same one the daily-claim route uses, or the two
-      // routes reset each other's streak (see helpers/streak.js).
-      // Sources, best first:
+      // routes reset each other's streak (see helpers/streak.js). todayStr's
+      // sources, best first (requestDayString):
       //   1. `local_time`: the client's current time, if the app sends it;
       //   2. `offset` (client getTimezoneOffset, sent by every reward POST):
       //      the user's local day derived from the server clock;
       //   3. `local_start_time`: only when a new session starts right now;
       //   4. the server's own day, as a last resort.
-      const todayStr =
-        dayStringFromLocalTime(local_time) ||
-        dayStringFromOffset(offset) ||
-        dayStringFromLocalTime(local_start_time) ||
-        toDayString(new Date());
       const next = computeStreak(existingRecord, todayStr);
       if (next.changed) {
         updateData.streakDays = next.streakDays;
@@ -507,7 +557,6 @@ router.post("/", async (req, res) => {
       console.log(`✅ POST update: total=${totalHashpower}, claimed=${newClaimed}, purchased=${currentPurchased}, streak=${streakBonusGh} (days=${streakDaysForBonus})`);
     }
 
-    if (typeof rewarded_ads_watched === "number") updateData.rewarded_ads_watched = cappedRewarded;
     if (typeof thirty_gh_rewarded_ads_watched === "number") updateData.thirty_gh_rewarded_ads_watched = cappedThirtyGh;
     if (typeof random_ads_watched === "number") updateData.random_ads_watched = random_ads_watched;
     if (typeof mining_isactive === "boolean") updateData.mining_isactive = mining_isactive;
@@ -546,7 +595,6 @@ router.post("/", async (req, res) => {
 
     if (typeof offset === "number") updateData.offset = offset;
     if (typeof timezone === "string" && timezone.trim() !== "") updateData.timezone = timezone.trim();
-    if (typeof stock_game_bonus === "number" && stock_game_bonus >= 0) updateData.stockGameBonus = stock_game_bonus;
 
     if (typeof start_time === "number") {
       const now = Date.now();
@@ -614,7 +662,13 @@ router.post("/", async (req, res) => {
 
     console.log("Setting User Data: ", updateData, user_id, "effective_hashpower:", effectiveHp);
 
-    res.json({ success: true, mining_details: responseDetails, ad_cap_reached: adCapReached });
+    res.json({
+      success: true,
+      mining_details: responseDetails,
+      ad_cap_reached: adCapReached,
+      // What the server granted for this request, so a refusal is visible.
+      ...(grant ? { grant: { kind: grant.kind, requested: grant.requested, granted: grant.granted, reason: grant.reason } } : {}),
+    });
   } catch (err) {
     console.error("Error saving mining details:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -662,7 +716,10 @@ router.post('/trading-history', async (req, res) => {
       tradeId: trade.tradeId || trade.id,
       earnedAt: trade.earnedAt,
       points: trade.points || 0,
-      miningGh: trade.miningGh || 0,
+      // Only a win carries a reward, and never more than the game's own.
+      miningGh: trade.won === true
+        ? Math.min(Math.max(0, Number(trade.miningGh) || 0), MAX_TRADING_WIN_GH)
+        : 0,
       entryPrice: trade.entryPrice,
       exitPrice: trade.exitPrice,
       direction: trade.direction,
@@ -702,12 +759,23 @@ router.post('/trading-claim', async (req, res) => {
     }
     trade.claimed = true;
     mining.markModified('tradingHistory');
-    const reward = trade.miningGh || WIN_GH_REWARD_SERVER;
+    // A lost trade pays nothing; a win pays at most MAX_TRADING_WIN_GH, and
+    // counts against the same daily game limit as the other games.
+    const requested = trade.won === true
+      ? Math.min(Number(trade.miningGh) || WIN_GH_REWARD_SERVER, MAX_TRADING_WIN_GH)
+      : 0;
+    const today = requestDayString({ offset: req.body.offset ?? mining.offset });
+    const out = applyGameBudget({ granted: 0, reason: null, set: {} }, mining, today, requested, MAX_TRADING_WIN_GH);
+    Object.assign(mining, out.set);
+    const reward = out.granted;
+    if (reward < requested) {
+      console.warn(`[RewardGrant] user ${user_id} trading: asked ${requested}, granted ${reward} (${out.reason})`);
+    }
     mining.stockGameBonus = (mining.stockGameBonus || 0) + reward;
     await mining.save();
     return res.json({
       success: true,
-      message: 'Reward claimed',
+      message: reward > 0 ? 'Reward claimed' : (trade.won === true ? 'Daily game reward limit reached' : 'No reward for a lost trade'),
       stockGameBonus: mining.stockGameBonus,
       reward,
     });
