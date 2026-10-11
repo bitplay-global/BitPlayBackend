@@ -18,9 +18,25 @@ process.env.SPEED_API_KEY = 'test-key-not-real';
 // ---- Speed payout stub: nothing here reaches the network. -------------------
 const speedCalls = [];
 let totalPayoutAttempts = 0; // never reset, unlike speedCalls
+// How the stubbed Speed API answers: 'ok', 'http-error' (Speed refused: not
+// paid), 'no-response' (timeout: outcome unknown), 'no-id' (200 without id).
+let speedMode = 'ok';
+let speedDelayMs = 0; // widens the window for simultaneous-request tests
 axios.request = async (config) => {
   speedCalls.push(config);
   totalPayoutAttempts++;
+  if (speedDelayMs) await new Promise(r => setTimeout(r, speedDelayMs));
+  if (speedMode === 'http-error') {
+    const e = new Error('Request failed with status code 400');
+    e.response = { status: 400, statusText: 'Bad Request', data: { errors: [{ message: 'invalid withdraw request' }] } };
+    throw e;
+  }
+  if (speedMode === 'no-response') {
+    const e = new Error('timeout of 60000ms exceeded');
+    e.code = 'ECONNABORTED';
+    throw e;
+  }
+  if (speedMode === 'no-id') return { data: { status: 'unknown' } };
   return { data: { id: `is_stub_${speedCalls.length}`, status: 'unpaid' } };
 };
 
@@ -69,6 +85,8 @@ async function reset() {
     BTC_DEPOSIT: mongoose.Types.Decimal128.fromString('0.0100000000000000'),
   });
   speedCalls.length = 0;
+  speedMode = 'ok';
+  speedDelayMs = 0;
   session = null;
 }
 
@@ -213,8 +231,116 @@ await Withdrawal.updateOne({ _id: res.body?.withdrawal?._id }, { $set: { status:
 res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: ADDRESS, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
 check('after a rejected withdrawal, a new one can be requested', res.status === 201, `status ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
 
+// ---- Approval and rejection under double clicks, races and Speed failures --
+const lnCreate = () => request(base).post('/api/withdrawals/create-speed-payment').set(MOBILE).send({
+  amount: USD_AMOUNT, baseAmount: BTC_AMOUNT, defaultAmountNumeric: BTC_AMOUNT,
+  currency: 'USD', target_currency: 'USDT', speed_wallet_address: ADDRESS, metadata: { user_id: USER },
+});
+const plainCreate = () => request(base).post('/api/withdrawals').set(MOBILE).send({
+  userId: USER, toAddress: ADDRESS, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT,
+});
+const approve = wid => request(base).patch(`/api/withdrawals/${wid}/approve`).send({});
+const reject = wid => request(base).patch(`/api/withdrawals/${wid}/reject`).send({});
+const deposit = async () => Number((await Balance.findOne({ user: USER }).lean()).BTC_DEPOSIT.toString()).toFixed(8);
+const FULL = (0.01).toFixed(8), RESERVED = (0.01 - BTC_AMOUNT).toFixed(8);
+const count = (arr, c) => arr.filter(r => r.status === c).length;
+
+console.log('\n--- Double-clicking Approve pays once ---');
+await reset();
+let wid = (await lnCreate()).body.withdrawal_id;
+session = { isLoggedIn: true }; speedDelayMs = 150;
+let rs = await Promise.all([approve(wid), approve(wid), approve(wid)]);
+check('Lightning: 3 simultaneous approvals -> one succeeds', count(rs, 200) === 1, `statuses ${rs.map(r => r.status)}`);
+check('Lightning: the others are told it is already being approved (409)', count(rs, 409) === 2, `statuses ${rs.map(r => r.status)}`);
+check('Lightning: Speed is called exactly once', speedCalls.length === 1, `${speedCalls.length} call(s)`);
+check('Lightning: record is SENT', (await Withdrawal.findById(wid))?.status === 'SENT');
+check('Lightning: balance taken once', (await deposit()) === RESERVED, await deposit());
+
+await reset();
+wid = (await plainCreate()).body.withdrawal._id;
+session = { isLoggedIn: true }; speedDelayMs = 150;
+rs = await Promise.all([approve(wid), approve(wid), approve(wid)]);
+check('Plain: 3 simultaneous approvals -> one succeeds, Speed called once', count(rs, 200) === 1 && speedCalls.length === 1, `statuses ${rs.map(r => r.status)}, ${speedCalls.length} call(s)`);
+check('Plain: balance deducted once even though it could cover more', (await deposit()) === RESERVED, await deposit());
+
+console.log('\n--- Double-clicking Reject refunds once ---');
+await reset();
+wid = (await lnCreate()).body.withdrawal_id;
+check('(balance reserved at creation)', (await deposit()) === RESERVED);
+session = { isLoggedIn: true };
+rs = await Promise.all([reject(wid), reject(wid), reject(wid)]);
+check('3 simultaneous rejects -> one succeeds', count(rs, 200) === 1, `statuses ${rs.map(r => r.status)}`);
+check('balance refunded exactly once', (await deposit()) === FULL, await deposit());
+check('record is FAILED, nothing paid', (await Withdrawal.findById(wid))?.status === 'FAILED' && speedCalls.length === 0);
+
+console.log('\n--- Approve and Reject at the same moment: one wins, consistently ---');
+await reset();
+wid = (await lnCreate()).body.withdrawal_id;
+session = { isLoggedIn: true }; speedDelayMs = 150;
+rs = await Promise.all([approve(wid), reject(wid)]);
+{
+  const w = await Withdrawal.findById(wid), d = await deposit();
+  const paidPath = w.status === 'SENT' && speedCalls.length === 1 && d === RESERVED;
+  const refundPath = w.status === 'FAILED' && speedCalls.length === 0 && d === FULL;
+  check('either paid once and kept deducted, or refused and refunded -- never both', paidPath || refundPath,
+    `status ${w.status}, ${speedCalls.length} call(s), deposit ${d}, responses ${rs.map(r => r.status)}`);
+}
+
+console.log('\n--- Speed refuses: nothing paid, balance back, admin can retry ---');
+await reset();
+wid = (await lnCreate()).body.withdrawal_id;
+session = { isLoggedIn: true }; speedMode = 'http-error';
+res = await approve(wid);
+let w = await Withdrawal.findById(wid);
+check('approval reports the Speed error', res.status === 500, `status ${res.status}`);
+check('record stays PENDING with the claim released', w.status === 'PENDING' && w.approvalStartedAt == null, `${w.status} ${w.approvalStartedAt}`);
+check('balance refunded', (await deposit()) === FULL, await deposit());
+speedMode = 'ok';
+res = await approve(wid);
+check('a retry succeeds', res.status === 200, `status ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
+check('and the balance is taken once again (net: paid once, deducted once)', (await deposit()) === RESERVED, await deposit());
+
+console.log('\n--- Speed does not answer: locked, not refunded, not re-approvable ---');
+for (const mode of ['no-response', 'no-id']) {
+  await reset();
+  wid = (await lnCreate()).body.withdrawal_id;
+  session = { isLoggedIn: true }; speedMode = mode;
+  res = await approve(wid);
+  w = await Withdrawal.findById(wid);
+  check(`${mode}: approval reports an unknown outcome (502)`, res.status === 502, `status ${res.status}`);
+  check(`${mode}: withdrawal locked with a note to check Speed`, w.status === 'PENDING' && w.approvalStartedAt != null && /check this payment/i.test(w.approvalNote || ''), JSON.stringify({ s: w.status, a: w.approvalStartedAt, n: w.approvalNote }));
+  check(`${mode}: balance NOT refunded (it may have been paid)`, (await deposit()) === RESERVED, await deposit());
+  speedMode = 'ok';
+  res = await approve(wid);
+  check(`${mode}: approving again is refused and does not call Speed`, res.status === 409 && speedCalls.length === 1, `status ${res.status}, ${speedCalls.length} call(s)`);
+  res = await reject(wid);
+  check(`${mode}: after checking Speed, admin can reject; balance refunded once`, res.status === 200 && (await deposit()) === FULL, `status ${res.status}, deposit ${await deposit()}`);
+}
+
+console.log('\n--- An approval in progress cannot be rejected underneath it ---');
+await reset();
+wid = (await lnCreate()).body.withdrawal_id;
+session = { isLoggedIn: true };
+await Withdrawal.updateOne({ _id: wid }, { $set: { approvalStartedAt: new Date(), approvalStartedBy: 'other-admin' } });
+res = await reject(wid);
+check('reject while another approval is running is refused (409)', res.status === 409, `status ${res.status}`);
+check('and refunds nothing', (await deposit()) === RESERVED);
+await Withdrawal.updateOne({ _id: wid }, { $set: { approvalStartedAt: new Date(Date.now() - 10 * 60 * 1000) } });
+res = await reject(wid);
+check('a claim older than 5 minutes (crashed attempt) can be rejected', res.status === 200 && (await deposit()) === FULL, `status ${res.status}`);
+
+console.log('\n--- No BTC amount on record: never paid without deducting ---');
+await reset();
+session = { isLoggedIn: true };
+const legacy = await Withdrawal.create({ userId: USER, asset: 'USDT', chain: 'USDT', toAddress: ADDRESS, amountNumeric: mongoose.Types.Decimal128.fromString(String(USD_AMOUNT)) });
+res = await approve(legacy._id);
+w = await Withdrawal.findById(legacy._id);
+check('approval refused when nothing can be deducted', res.status === 400, `status ${res.status} ${JSON.stringify(res.body).slice(0, 100)}`);
+check('and Speed is not called', speedCalls.length === 0, `${speedCalls.length} call(s)`);
+check('and the claim is released', w.status === 'PENDING' && w.approvalStartedAt == null);
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
-console.log(`  payout attempts across the whole run: ${totalPayoutAttempts} (expected 1 -- the single admin approval)`);
+console.log(`  payout attempts across the whole run: ${totalPayoutAttempts} (each checked above; a double payout would have failed a check)`);
 
 server.close(); await mongoose.disconnect();
 await mongod.stop();

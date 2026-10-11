@@ -69,6 +69,30 @@ const withdrawalSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // Approval lock. PATCH /:id/approve claims a PENDING withdrawal by setting
+  // approvalStartedAt atomically, so a second simultaneous approval (double
+  // click, two admins) is refused instead of paying twice. Cleared again when
+  // the attempt fails before any money could have moved; kept when Speed's
+  // answer is unknown, with approvalNote telling the admin to check Speed.
+  approvalStartedAt: {
+    type: Date,
+    default: null,
+  },
+  approvalStartedBy: {
+    type: String,
+    default: null,
+  },
+  approvalNote: {
+    type: String,
+    default: null,
+  },
+  // Set by PATCH /:id/reject.
+  note: {
+    type: String,
+  },
+  rejectedAt: {
+    type: Date,
+  },
 }, { timestamps: { createdAt: "created_at", updatedAt: true } });
 
 // At most one PENDING withdrawal per user, enforced by the database. The

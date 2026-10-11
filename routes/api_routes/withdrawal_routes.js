@@ -593,6 +593,28 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
  * Calls Speed /send afterwards to handle sending
  */
 router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
+  // Set once this request holds the approval claim (see step 1).
+  let claimedId = null;
+  let paymentAttempted = false;
+  // Every return that happens before Speed could have been paid must release
+  // the claim, so the admin can try again.
+  const releaseClaim = () =>
+    claimedId == null
+      ? Promise.resolve()
+      : Withdrawal.updateOne(
+          { _id: claimedId, status: "PENDING" },
+          { $set: { approvalStartedAt: null, approvalStartedBy: null } }
+        ).catch(e => console.error(`[approve] could not release approval claim on ${claimedId}:`, e.message));
+  // Speed did not give a clear answer: the payment may or may not have gone
+  // out. Keep the claim (no re-approval) and do not refund until an admin has
+  // checked Speed; they can then reject (refunds) or mark it sent.
+  const lockAsUnknown = (reason) =>
+    claimedId == null
+      ? Promise.resolve()
+      : Withdrawal.updateOne(
+          { _id: claimedId, status: "PENDING" },
+          { $set: { approvalNote: `Outcome unknown: ${reason}. Check this payment at app.tryspeed.com before approving again or rejecting.` } }
+        ).catch(e => console.error(`[approve] could not record unknown outcome on ${claimedId}:`, e.message));
   try {
     logWithdrawApprove("request_received", {
       route: "PATCH /withdrawals/:id/approve",
@@ -601,27 +623,50 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
       ip: req.ip,
       method: req.method,
     });
-    // 1. Load the withdrawal by ID
-    const withdrawal = await Withdrawal.findById(req.params.id);
+    // 1. Claim the withdrawal atomically. Only one approval can hold a PENDING
+    // withdrawal at a time: a second, simultaneous approval (double click, two
+    // admins) is refused here, before anything is deducted or paid. Reading it
+    // and checking status separately let two approvals both pass and both pay.
+    const approver = String(req.user?.id || req.session?.adminUser || "admin");
+    const withdrawal = await Withdrawal.findOneAndUpdate(
+      { _id: req.params.id, status: "PENDING", approvalStartedAt: null },
+      { $set: { approvalStartedAt: new Date(), approvalStartedBy: approver, approvalNote: null } },
+      { new: true }
+    );
     if (!withdrawal) {
-      logWithdrawApprove("withdrawal_not_found", {
+      const current = await Withdrawal.findById(req.params.id).lean();
+      if (!current) {
+        logWithdrawApprove("withdrawal_not_found", {
+          route: "PATCH /withdrawals/:id/approve",
+          withdrawalId: req.params.id,
+        });
+        return res.status(404).json({ error: "Withdrawal not found" });
+      }
+      if (current.status !== "PENDING") {
+        logWithdrawApprove("invalid_status", {
+          route: "PATCH /withdrawals/:id/approve",
+          withdrawalId: req.params.id,
+          status: current.status,
+        });
+        return res.status(400).json({
+          error: `Cannot approve withdrawal with status: ${current.status}`,
+        });
+      }
+      logWithdrawApprove("approval_already_in_progress", {
         route: "PATCH /withdrawals/:id/approve",
         withdrawalId: req.params.id,
+        approvalStartedAt: current.approvalStartedAt,
+        approvalStartedBy: current.approvalStartedBy,
       });
-      return res.status(404).json({ error: "Withdrawal not found" });
+      return res.status(409).json({
+        error: current.approvalNote
+          || "This withdrawal is already being approved. Wait for that attempt to finish and reload the page.",
+        approvalStartedAt: current.approvalStartedAt,
+        approvalStartedBy: current.approvalStartedBy,
+      });
     }
 
-    // Check if already processed
-    if (withdrawal.status !== "PENDING") {
-      logWithdrawApprove("invalid_status", {
-        route: "PATCH /withdrawals/:id/approve",
-        withdrawalId: req.params.id,
-        status: withdrawal.status,
-      });
-      return res.status(400).json({
-        error: `Cannot approve withdrawal with status: ${withdrawal.status}`,
-      });
-    }
+    claimedId = withdrawal._id;
 
     // Use dynamic values for Speed API payload
     const amount =
@@ -637,6 +682,7 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
         withdrawalId: req.params.id,
         amount,
       });
+      await releaseClaim();
       return res.status(400).json({
         error: "Invalid withdrawal amount",
       });
@@ -652,6 +698,7 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
         amount,
         minimum: SPEED_MIN_USDT,
       });
+      await releaseClaim();
       return res.status(400).json({
         error: `Withdrawal amount is below Speed minimum. Amount must be at least ${SPEED_MIN_USDT} USDT (got ${amount} USDT).`,
         minAmountUsdt: SPEED_MIN_USDT,
@@ -682,6 +729,8 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
         Authorization: getSpeedAuthHeader(),
       },
       data: dataspeed,
+      // Bounded, so an approval never hangs with the claim held indefinitely.
+      timeout: 60_000,
     };
 
     // 3. Deduct balance FIRST -- before calling Speed API so we never pay
@@ -700,13 +749,19 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
 
     if (!withdrawal.balanceDeducted) {
       if (!btcAmountStr || isNaN(Number(btcAmountStr)) || Number(btcAmountStr) <= 0) {
-        logWithdrawApprove("balance_deduction_skipped_no_amount", {
+        // Without a BTC amount nothing can be taken from the user's balance,
+        // and paying anyway would be free money. This used to log a warning
+        // and pay; now it refuses.
+        logWithdrawApprove("refused_no_btc_amount", {
           route: "PATCH /withdrawals/:id/approve",
           withdrawalId: req.params.id,
           userId: withdrawal.userId,
           defaultAmountNumeric: String(withdrawal?.defaultAmountNumeric),
         });
-        console.warn(`[approve] Skipping balance deduction -- no valid defaultAmountNumeric on withdrawal ${req.params.id}`);
+        await releaseClaim();
+        return res.status(400).json({
+          error: "This withdrawal has no BTC amount recorded, so the user's balance cannot be deducted. Reject it and ask the user to request again.",
+        });
       } else {
         try {
           await deductBTCDepositBalance(withdrawal.userId, btcAmountStr);
@@ -725,6 +780,7 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
             userId: withdrawal.userId,
             error: deductErr,
           });
+          await releaseClaim();
           return res.status(400).json({
             error: "Insufficient BTC deposit balance -- withdrawal cannot be approved.",
             details: deductErr.message,
@@ -743,11 +799,31 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
     // 4. Call Speed API after balance is safely reserved
     let responsespeed;
     try {
+      paymentAttempted = true;
       responsespeed = await axios.request(config);
     } catch (apiError) {
-      // Speed API failed -- restore whatever balance is currently reserved
-      // for this withdrawal (whether deducted just now or already reserved
-      // from creation), so the failed attempt doesn't cost the user anything.
+      // No HTTP answer (timeout, connection reset): Speed may have paid.
+      // Keep the claim and the deducted balance; an admin must check Speed.
+      if (!apiError.response) {
+        await lockAsUnknown(`Speed did not answer (${apiError.code || apiError.message})`);
+        logWithdrawApprove("speed_outcome_unknown", {
+          route: "PATCH /withdrawals/:id/approve",
+          withdrawalId: req.params.id,
+          userId: withdrawal.userId,
+          message: apiError.message,
+          code: apiError.code,
+        });
+        console.error(`[approve] Speed outcome UNKNOWN for withdrawal ${withdrawal._id}: ${apiError.message}`);
+        return res.status(502).json({
+          error: "Speed did not answer, so it is not known whether this payment was sent. The withdrawal is locked and the balance stays deducted. Check it at app.tryspeed.com, then mark it sent or reject it.",
+          details: apiError.message,
+        });
+      }
+      // Speed answered with an error: nothing was paid. Restore whatever
+      // balance is reserved for this withdrawal (whether deducted just now or
+      // already reserved from creation), then release the claim so the admin
+      // can retry. Release only after the refund, or a retry could pay while
+      // the balance still looks reserved and this refund then lands too.
       if (withdrawal.balanceDeducted && btcAmountStr) {
         try {
           await restoreBTCDepositBalance(withdrawal.userId, btcAmountStr);
@@ -769,6 +845,7 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
           });
         }
       }
+      await releaseClaim();
 
       logWithdrawApprove("speed_api_failed", {
         route: "PATCH /withdrawals/:id/approve",
@@ -784,7 +861,7 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
         data: apiError.response?.data,
         message: apiError.message,
         payload: config.data,
-        headers: config.headers,
+        // headers deliberately not logged: they carry the Speed API key
         url: config.url,
       });
       if (apiError.response?.data) {
@@ -816,22 +893,18 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
 
     // Validate API response
     if (!responsespeed.data?.id) {
-      // Restore balance -- Speed gave an invalid response
-      if (withdrawal.balanceDeducted && btcAmountStr) {
-        try {
-          await restoreBTCDepositBalance(withdrawal.userId, btcAmountStr);
-          withdrawal.balanceDeducted = false;
-          await withdrawal.save();
-        } catch (_) {}
-      }
+      // Speed answered "OK" but without a payment id: it may have paid. This
+      // used to refund the balance, which pays the user twice if it had. Keep
+      // the claim and the deduction until an admin has checked Speed.
+      await lockAsUnknown("Speed answered without a payment id");
       logWithdrawApprove("speed_api_invalid_response", {
         route: "PATCH /withdrawals/:id/approve",
         withdrawalId: req.params.id,
         responseData: responsespeed.data,
       });
       console.error("Invalid Speed API response:", responsespeed.data);
-      return res.status(500).json({
-        error: "Speed API returned invalid response format",
+      return res.status(502).json({
+        error: "Speed answered without a payment id, so it is not known whether this payment was sent. The withdrawal is locked and the balance stays deducted. Check it at app.tryspeed.com, then mark it sent or reject it.",
         details: responsespeed.data,
       });
     }
@@ -839,7 +912,7 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
     // 5. Update withdrawal record after successful payment
     withdrawal.status = "SENT";
     withdrawal.txHash = responsespeed.data.id;
-    withdrawal.approvedBy = req.user?.id || "system";
+    withdrawal.approvedBy = approver;
     withdrawal.approvedAt = new Date();
     withdrawal.action = responsespeed.data;
     await withdrawal.save();
@@ -872,6 +945,11 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
       approvedBy: req.user?.id || "system",
       error: err,
     });
+    // Unexpected failure. Before the Speed call nothing could have moved, so
+    // the admin may retry; after it, the payment may have gone out (e.g. the
+    // record failed to save as SENT), so keep the withdrawal locked.
+    if (paymentAttempted) await lockAsUnknown(`unexpected error after calling Speed (${err.message})`);
+    else await releaseClaim();
     res.status(500).json({ error: err.message });
   }
 });
@@ -888,33 +966,65 @@ router.patch("/:id/reject", requireAdminAuth, async (req, res) => {
       ip: req.ip,
       method: req.method,
     });
-    const withdrawal = await Withdrawal.findById(req.params.id);
+    // Take the withdrawal out of PENDING atomically, before refunding, so a
+    // second simultaneous reject cannot refund it again and an approval cannot
+    // pay it at the same time. Reading it and checking status separately let
+    // two rejects both refund.
+    //
+    // Only a still-pending withdrawal can be rejected: once it's SENT, funds
+    // have left via Speed and rejecting would refund a paid withdrawal. While
+    // an approval is running (fresh claim) rejecting is refused too. A claim
+    // left with an "outcome unknown" note, or older than 5 minutes (the Speed
+    // call times out after 60 s), can be rejected once the admin has checked
+    // Speed.
+    const staleBefore = new Date(Date.now() - 5 * 60 * 1000);
+    const withdrawal = await Withdrawal.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        status: "PENDING",
+        $or: [
+          { approvalStartedAt: null },
+          { approvalNote: { $ne: null } },
+          { approvalStartedAt: { $lt: staleBefore } },
+        ],
+      },
+      { $set: { status: "FAILED", note: "Rejected by admin", rejectedAt: new Date() } },
+      { new: false } // the record as it was, to know whether balance was reserved
+    );
     if (!withdrawal) {
-      logWithdrawReject("withdrawal_not_found", {
+      const current = await Withdrawal.findById(req.params.id).lean();
+      if (!current) {
+        logWithdrawReject("withdrawal_not_found", {
+          route: "PATCH /withdrawals/:id/reject",
+          withdrawalId: req.params.id,
+        });
+        return res.status(404).json({ error: "Withdrawal not found" });
+      }
+      if (current.status !== "PENDING") {
+        logWithdrawReject("invalid_status", {
+          route: "PATCH /withdrawals/:id/reject",
+          withdrawalId: req.params.id,
+          status: current.status,
+        });
+        return res.status(400).json({
+          error: `Cannot reject withdrawal with status: ${current.status}`,
+        });
+      }
+      logWithdrawReject("approval_in_progress", {
         route: "PATCH /withdrawals/:id/reject",
         withdrawalId: req.params.id,
+        approvalStartedAt: current.approvalStartedAt,
       });
-      return res.status(404).json({ error: "Withdrawal not found" });
-    }
-
-    // Only a still-pending withdrawal can be rejected — once it's SENT, funds
-    // have already left via Speed and rejecting would incorrectly refund a
-    // withdrawal that was actually paid out.
-    if (withdrawal.status !== "PENDING") {
-      logWithdrawReject("invalid_status", {
-        route: "PATCH /withdrawals/:id/reject",
-        withdrawalId: req.params.id,
-        status: withdrawal.status,
-      });
-      return res.status(400).json({
-        error: `Cannot reject withdrawal with status: ${withdrawal.status}`,
+      return res.status(409).json({
+        error: "This withdrawal is being approved right now. Wait for that to finish and reload the page.",
+        approvalStartedAt: current.approvalStartedAt,
       });
     }
 
-    // create-speed-payment reserves (deducts) balance at creation time, so a
-    // rejected withdrawal that already has balanceDeducted must be refunded
-    // — otherwise a genuine user permanently loses that BTC the moment an
-    // admin declines their request.
+    // create-speed-payment reserves (deducts) balance at creation time, and
+    // approval deducts before paying, so a rejected withdrawal that has
+    // balanceDeducted must be refunded -- otherwise a genuine user
+    // permanently loses that BTC the moment an admin declines their request.
     if (withdrawal.balanceDeducted) {
       const refundAmount = withdrawal.defaultAmountNumeric;
       if (refundAmount !== undefined && refundAmount !== null && Number(refundAmount) > 0) {
@@ -928,18 +1038,23 @@ router.patch("/:id/reject", requireAdminAuth, async (req, res) => {
             error: restoreErr,
           });
           console.error("Failed to restore balance on reject:", restoreErr);
+          // Put it back as it was, so the rejection can be retried.
+          await Withdrawal.updateOne(
+            { _id: withdrawal._id, status: "FAILED" },
+            { $set: { status: "PENDING" }, $unset: { note: 1, rejectedAt: 1 } }
+          ).catch(e => console.error("[reject] CRITICAL: could not put withdrawal back to PENDING:", e.message));
           return res.status(500).json({
             error: "Failed to restore user balance during rejection — withdrawal left untouched",
             details: restoreErr.message,
           });
         }
+        await Withdrawal.updateOne({ _id: withdrawal._id }, { $set: { balanceDeducted: false } });
         withdrawal.balanceDeducted = false;
       }
     }
 
     withdrawal.status = "FAILED";
-    withdrawal.note = "Rejected by admin"; // if model supports 'note'
-    await withdrawal.save();
+    withdrawal.note = "Rejected by admin";
     logWithdrawReject("request_completed_success", {
       route: "PATCH /withdrawals/:id/reject",
       withdrawalId: req.params.id,

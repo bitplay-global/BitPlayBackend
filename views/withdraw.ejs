@@ -228,9 +228,17 @@
       var row = btn.closest('tr');
       var id = row.dataset.id;
       if (!confirm('Approve this withdrawal?')) return;
+      // One request per click: lock this row's buttons until the answer comes
+      // back (the server also refuses a second simultaneous approval).
+      var rowButtons = row.querySelectorAll('.approve-btn, .reject-btn');
+      rowButtons.forEach(function (b) { b.disabled = true; });
+      var originalText = btn.textContent;
+      btn.textContent = 'Approving…';
+      var unlock = function () { rowButtons.forEach(function (b) { b.disabled = false; }); btn.textContent = originalText; };
       try {
         var res = await fetch('/api/withdrawals/' + id + '/approve', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
         if (res.ok) { location.reload(); return; }
+        unlock();
         var msg = 'Failed to approve';
         var details = '';
         var text = await res.text();
@@ -243,6 +251,7 @@
         }
         showWithdrawalError(msg, details);
       } catch (err) {
+        unlock();
         showWithdrawalError('Request failed.', err.message || String(err));
       }
     });
@@ -254,9 +263,15 @@
       var row = btn.closest('tr');
       var id = row.dataset.id;
       if (!confirm('Reject this withdrawal?')) return;
+      var rowButtons = row.querySelectorAll('.approve-btn, .reject-btn');
+      rowButtons.forEach(function (b) { b.disabled = true; });
+      var originalText = btn.textContent;
+      btn.textContent = 'Rejecting…';
+      var unlock = function () { rowButtons.forEach(function (b) { b.disabled = false; }); btn.textContent = originalText; };
       try {
         var res = await fetch('/api/withdrawals/' + id + '/reject', { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
         if (res.ok) { location.reload(); return; }
+        unlock();
         var msg = 'Failed to reject';
         var details = '';
         var text = await res.text();
@@ -269,6 +284,7 @@
         }
         showWithdrawalError(msg, details);
       } catch (err) {
+        unlock();
         showWithdrawalError('Request failed.', err.message || String(err));
       }
     });
