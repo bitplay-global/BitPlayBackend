@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 import Client from "lightning-client";
 import axios from "axios";
 import dotenv from 'dotenv';
-import { getWithdrawalLimits } from "../../helpers/withdrawalLimits.js";
+import { getEffectiveWithdrawalLimits, belowMinimumMessage, SPEED_MIN_USDT } from "../../helpers/withdrawalLimits.js";
 import { getBtcUsdPriceCached } from "../../helpers/btcPrice.js";
 import { mobileAppGuard } from "../../middleware/mobileAppGuard.js";
 import { requireAdminAuth } from "../../middleware/requireAdminAuth.js";
@@ -369,13 +369,15 @@ router.get("/speed-account", requireAdminAuth, async (req, res) => {
 });
 
 /**
- * GET withdrawal limits (min/max in BTC) for the app to validate and display
- * Values are read from database (admin settings); fallback to env/defaults.
+ * GET withdrawal limits (min/max in BTC) for the app to validate and display.
+ * The minimum is the dashboard value raised, when needed, to what Speed will
+ * pay at the current BTC price (helpers/withdrawalLimits.js), so the app never
+ * shows a minimum the payout provider then refuses.
  */
 router.get("/limits", async (req, res) => {
   try {
-    const { minBtc, maxBtc } = await getWithdrawalLimits();
-    return res.json({ minBtc, maxBtc });
+    const { minBtc, maxBtc, adminMinBtc, speedMinBtc, raisedBySpeed } = await getEffectiveWithdrawalLimits();
+    return res.json({ minBtc, maxBtc, adminMinBtc, speedMinBtc, raisedBySpeed });
   } catch (err) {
     console.error("Error fetching withdrawal limits:", err);
     return res.status(500).json({ error: err.message || "Failed to get withdrawal limits" });
@@ -439,11 +441,12 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
       return res.status(400).json({ error: "Invalid withdrawal amount (BTC)." });
     }
 
-    const { minBtc, maxBtc } = await getWithdrawalLimits();
+    const limits = await getEffectiveWithdrawalLimits();
+    const { minBtc, maxBtc } = limits;
 
     if (btcNum < minBtc) {
       return res.status(400).json({
-        error: `Withdrawal amount must be at least ${minBtc} BTC.`,
+        error: belowMinimumMessage(limits),
         minBtc,
         maxBtc,
       });
@@ -498,15 +501,19 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
     asset = "USDT";
     chain = "USDT";
 
-    // Speed API minimum for USDT is 0.5; reject at creation so withdrawal can be approved later
-    const SPEED_MIN_USDT = 0.5;
+    // Speed pays nothing under 0.5 USDT. The BTC minimum above already covers
+    // this at the current price; this is the safety net for an app that
+    // converted at a stale price. The message names the BTC amount, which is
+    // what the user typed.
     const amountNum =
       typeof amountNumeric === "object" && amountNumeric?.toString
         ? Number(amountNumeric.toString())
         : Number(amountNumeric);
     if (!Number.isFinite(amountNum) || amountNum < SPEED_MIN_USDT) {
       return res.status(400).json({
-        error: `Withdrawal amount must be at least ${SPEED_MIN_USDT} USDT (Speed minimum).`,
+        error: `${belowMinimumMessage(limits)} The payout provider's minimum is ${SPEED_MIN_USDT} USDT.`,
+        minBtc,
+        maxBtc,
         minAmountUsdt: SPEED_MIN_USDT,
       });
     }
@@ -689,7 +696,6 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
     }
 
     // Speed API minimum: 0.5 USDT (50 USDT cents)
-    const SPEED_MIN_USDT = 0.5;
     if (withdrawal.asset === "USDT" && amount < SPEED_MIN_USDT) {
       logWithdrawApprove("speed_minimum_failed", {
         route: "PATCH /withdrawals/:id/approve",
@@ -1144,7 +1150,8 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
     }
 
     const btcAmount = defaultAmountNumeric || baseAmount;
-    const { minBtc, maxBtc } = await getWithdrawalLimits();
+    const limits = await getEffectiveWithdrawalLimits();
+    const { minBtc, maxBtc } = limits;
     const btcAmountNum = Number(btcAmount);
 
     if (!Number.isFinite(btcAmountNum) || btcAmountNum <= 0) {
@@ -1154,7 +1161,7 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
     }
     if (btcAmountNum < minBtc) {
       return res.status(400).json({
-        error: `Withdrawal amount must be at least ${minBtc} BTC.`,
+        error: belowMinimumMessage(limits),
         minBtc,
         maxBtc,
       });
@@ -1217,15 +1224,16 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
       return res.status(400).json({ error: "Insufficient balance: requested BTC is greater than your total balance" });
     }
 
-    // Speed API minimum for USDT is 0.5; reject at creation so withdrawal can be approved later
-    const SPEED_MIN_USDT = 0.5;
+    // Safety net for a stale app-side conversion; see POST / above.
     const amountNum =
       typeof amount === "object" && amount?.toString
         ? Number(amount.toString())
         : Number(amount);
     if (!Number.isFinite(amountNum) || (String(target_currency).toUpperCase() === "USDT" && amountNum < SPEED_MIN_USDT)) {
       return res.status(400).json({
-        error: `Withdrawal amount must be at least ${SPEED_MIN_USDT} USDT (Speed minimum).`,
+        error: `${belowMinimumMessage(limits)} The payout provider's minimum is ${SPEED_MIN_USDT} USDT.`,
+        minBtc,
+        maxBtc,
         minAmountUsdt: SPEED_MIN_USDT,
       });
     }
