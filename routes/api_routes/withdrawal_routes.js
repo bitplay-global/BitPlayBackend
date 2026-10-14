@@ -695,30 +695,38 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
       });
     }
 
-    // Speed API minimum: 0.5 USDT (50 USDT cents)
-    if (withdrawal.asset === "USDT" && amount < SPEED_MIN_USDT) {
-      logWithdrawApprove("speed_minimum_failed", {
+    // Paid in SATS over Lightning. Until 2026-10-14 this sent USDT with
+    // withdraw_method "lightning", which Speed accepted (payouts on 2 and 3
+    // Oct went through) and then stopped accepting: "The withdraw_method is
+    // invalid". Speed's docs now list USDT only on Ethereum/Tron/Solana;
+    // Lightning carries bitcoin. Users give Lightning addresses, and the
+    // balance is in BTC anyway, so the BTC amount on record is what is sent,
+    // in whole sats, rounded down so a user is never paid more than was
+    // deducted. The USDT figure (`amount`) stays on the record for reference.
+    // The Speed account must hold a SATS balance for this (see the Speed
+    // wallet card on the withdrawals page).
+    const btcForSpeed = Number(
+      typeof withdrawal.defaultAmountNumeric === "object" && withdrawal.defaultAmountNumeric?.toString
+        ? withdrawal.defaultAmountNumeric.toString()
+        : withdrawal.defaultAmountNumeric
+    );
+    const satsForSpeed = Number.isFinite(btcForSpeed) ? Math.floor(btcForSpeed * 1e8) : 0;
+    if (satsForSpeed < 1) {
+      logWithdrawApprove("no_btc_amount_for_sats", {
         route: "PATCH /withdrawals/:id/approve",
         withdrawalId: req.params.id,
-        asset: withdrawal.asset,
-        amount,
-        minimum: SPEED_MIN_USDT,
+        defaultAmountNumeric: withdrawal.defaultAmountNumeric,
       });
       await releaseClaim();
       return res.status(400).json({
-        error: `Withdrawal amount is below Speed minimum. Amount must be at least ${SPEED_MIN_USDT} USDT (got ${amount} USDT).`,
-        minAmountUsdt: SPEED_MIN_USDT,
-        amountUsdt: amount,
+        error: "This withdrawal has no usable BTC amount on record, so it cannot be paid in sats. Reject it and ask the user to request again.",
       });
     }
 
-    // Speed API allows at most 8 decimal digits; avoid float precision (e.g. 0.058973399999999995)
-    const amountForSpeed = parseFloat(Number(amount).toFixed(8));
-
     const dataspeed = JSON.stringify({
-      amount: amountForSpeed,
-      currency: withdrawal.asset,
-      target_currency: withdrawal.asset,
+      amount: satsForSpeed,
+      currency: "SATS",
+      target_currency: "SATS",
       withdraw_method: "lightning",
       withdraw_request: withdrawal.toAddress,
       note: "Withdrawal approved from backend"

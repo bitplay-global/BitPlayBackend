@@ -153,6 +153,11 @@ check('admin approval succeeds', res.status === 200, `status ${res.status} ${JSO
 check('the payout API is called exactly once', speedCalls.length === 1, `${speedCalls.length} call(s)`);
 check('the payout goes to the requested address',
   String(speedCalls[0]?.data).includes(ADDRESS));
+// Speed stopped accepting USDT over Lightning on 2026-10-14 ("The
+// withdraw_method is invalid"); Lightning payouts are bitcoin, in whole sats.
+const sent = JSON.parse(speedCalls[0]?.data || '{}');
+check('paid in SATS over Lightning, not USDT', sent.currency === 'SATS' && sent.target_currency === 'SATS' && sent.withdraw_method === 'lightning', JSON.stringify(sent));
+check('amount is the BTC amount in whole sats', sent.amount === Math.floor(BTC_AMOUNT * 1e8) && Number.isInteger(sent.amount), String(sent.amount));
 const afterApprove = await Withdrawal.findById(id);
 check('record becomes SENT', afterApprove?.status === 'SENT', afterApprove?.status);
 
