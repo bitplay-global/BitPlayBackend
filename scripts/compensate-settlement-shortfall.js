@@ -71,9 +71,11 @@ async function main() {
   const total = rows.reduce((s, r) => s + r.shortfall, 0);
   console.log(`${APPLY ? 'APPLY' : 'DRY RUN'}: ${rows.length} underpaid days, ${users.size} users, ${total.toFixed(10)} BTC to credit (from ${LOG})`);
 
+  // One read for all days already handled, instead of one per day.
+  const done = new Set((await marks.find({}, { projection: { user: 1, day: 1 } }).toArray()).map(m => `${m.user}|${m.day}`));
   let credited = 0, creditedBtc = 0, skipped = 0, failed = 0;
   for (const r of rows.sort((a, b) => a.user.localeCompare(b.user) || a.day.localeCompare(b.day))) {
-    if (await marks.findOne({ user: r.user, day: r.day })) { skipped++; continue; }
+    if (done.has(`${r.user}|${r.day}`)) { skipped++; continue; }
     if (!APPLY) { credited++; creditedBtc += r.shortfall; continue; }
     const amountStr = r.shortfall.toFixed(16);
     try {
