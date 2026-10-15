@@ -23,6 +23,7 @@ import {
   resolveSessionStartDateStr,
   getHistoryDateFromSessionStartStr,
   computeMinedBtcOnDayRollover,
+  settlementAmount,
 } from "./helpers/miningDaySettlement.js";
 
 console.log("Cron Job Started!!");
@@ -119,15 +120,15 @@ cron.schedule("0 * * * *", async () => {
         const userBalance = await Balance.findOne({ user: userId });
         if (!userBalance) continue;
 
-        const syncedBtc = parseFloat(userBalance?.BTC?.toString() || '0');
-        const fromElapsed = computeMinedBtcOnDayRollover({ miningDetail, userTz, userOffset });
-        // Take the conservative MIN of (client-synced BTC, server-computed BTC).
-        // - syncedBtc may be inflated by a tampered client.
-        // - fromElapsed is capped at the user's local midnight by computeMinedBtcOnDayRollover.
-        // Using MIN guarantees the credited amount can never exceed what the
-        // server itself can verify for that user's mining session.
-        const minedBtc = Math.max(0, Math.min(syncedBtc, fromElapsed));
-        console.log(`User ${userId} (tz=${userTz || 'offset=' + userOffset}): sessionDay=${sessionStartDateStr}, today=${userTodayStr}, synced=${syncedBtc}, fromElapsed=${fromElapsed}, mined(min)=${minedBtc}`);
+        // The server's own calculation is what is paid (see settlementAmount):
+        // the app's last-reported figure used to cap it, which underpaid every
+        // user who closed the app. It is still logged for comparison.
+        const { minedBtc, fromElapsed, syncedBtc, capped } = settlementAmount({
+          miningDetail, userTz, userOffset,
+          syncedBtc: parseFloat(userBalance?.BTC?.toString() || '0'),
+        });
+        if (capped) console.warn(`[Settlement] user ${userId}: computed ${fromElapsed} BTC exceeds the daily ceiling; paying ${minedBtc}`);
+        console.log(`User ${userId} (tz=${userTz || 'offset=' + userOffset}): sessionDay=${sessionStartDateStr}, today=${userTodayStr}, synced=${syncedBtc}, fromElapsed=${fromElapsed}, mined=${minedBtc}`);
 
         const historyDate = getHistoryDateFromSessionStartStr(sessionStartDateStr);
 

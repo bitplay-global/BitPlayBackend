@@ -19,6 +19,7 @@
     "test:streak": "node tests/streak.test.mjs",
     "test:rewards": "node tests/reward-grants.test.mjs",
     "test:withdrawal-limits": "node tests/withdrawal-limits.test.mjs",
+    "test:settlement": "node tests/settlement-amount.test.mjs",
     "test:ticket-reply": "node tests/ticket-reply-email.test.mjs",
     "test:admin-session": "node tests/admin-session.test.mjs",
     "test:app-auth": "JWT_LIB_DIR=../bitplay-auth node tests/app-user-auth.test.mjs",

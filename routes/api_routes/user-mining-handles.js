@@ -12,6 +12,7 @@ import {
   getUserLocalDateStr,
   getSessionStartDateStrFromLocalStart,
   computeMinedBtcOnDayRollover,
+  settlementAmount,
   formatLocalStartTime,
   getLocalDateStrAt,
 } from "../../helpers/miningDaySettlement.js";
@@ -328,19 +329,21 @@ router.get("/:userId", async (req, res) => {
       // so no client request can produce a BalanceHistory entry or move BTC
       // into the withdrawable pool.
       //
-      // For display we return the conservative minimum of (syncedBtc,
-      // fromElapsed) capped at the user's local midnight — the same value the
-      // cron will write — so the UI shows a stable end-of-day amount while the
-      // settlement is queued.
+      // For display we return the amount the cron will write (the server's
+      // own calculation, capped at the user's local midnight; see
+      // settlementAmount), so the UI shows a stable end-of-day amount while
+      // the settlement is queued.
       const user_balance = await Balance.findOne({ user: userId });
       const userTz = mining_details.timezone || null;
       const userOffset = mining_details.offset;
-      const syncedBtc = parseFloat(user_balance?.BTC?.toString() || "0");
-      const fromElapsed = computeMinedBtcOnDayRollover({ miningDetail: mining_details, userTz, userOffset });
-      calculated_btc = Math.min(syncedBtc, fromElapsed);
+      const settled = settlementAmount({
+        miningDetail: mining_details, userTz, userOffset,
+        syncedBtc: parseFloat(user_balance?.BTC?.toString() || "0"),
+      });
+      calculated_btc = settled.minedBtc;
 
       console.log(
-        `Day rollover detected for ${userId} — settlement deferred to cron. synced=${syncedBtc}, fromElapsed=${fromElapsed}, displayMin=${calculated_btc}, userToday=${userTodayStr}, sessionDay=${sessionStartDateStr}`
+        `Day rollover detected for ${userId} — settlement deferred to cron. synced=${settled.syncedBtc}, fromElapsed=${settled.fromElapsed}, display=${calculated_btc}, userToday=${userTodayStr}, sessionDay=${sessionStartDateStr}`
       );
     }
 

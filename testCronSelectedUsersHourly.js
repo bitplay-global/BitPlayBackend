@@ -89,9 +89,10 @@ async function runSelectedUsersSettlementOnce() {
 
         console.log("syncedBtc:", syncedBtc, "fromElapsed:", fromElapsed);
 
-        const minedBtc = Math.max(0, Math.min(syncedBtc, fromElapsed));
+        // Same rule as cronJobs.js: the server's calculation is paid.
+        const minedBtc = Math.max(0, fromElapsed);
         console.log(
-          `[TEST CRON SELECTED] User ${userId} (tz=${userTz || "offset=" + userOffset}): sessionDay=${sessionStartDateStr}, today=${userTodayStr}, synced=${syncedBtc}, fromElapsed=${fromElapsed}, mined(min)=${minedBtc}`
+          `[TEST CRON SELECTED] User ${userId} (tz=${userTz || "offset=" + userOffset}): sessionDay=${sessionStartDateStr}, today=${userTodayStr}, synced=${syncedBtc}, fromElapsed=${fromElapsed}, mined=${minedBtc}`
         );
 
         const historyDate = getHistoryDateFromSessionStartStr(sessionStartDateStr);

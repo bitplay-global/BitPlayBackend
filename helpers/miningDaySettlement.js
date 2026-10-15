@@ -174,3 +174,47 @@ export function formatLocalStartTime(ms, userTimezone, userOffset) {
   const h12 = parts.h % 12 === 0 ? 12 : parts.h % 12;
   return `${parts.dd}/${parts.mm}/${parts.yyyy}, ${String(h12).padStart(2, "0")}:${parts.mi}:${parts.ss} ${ampm}`;
 }
+
+/**
+ * Hard ceiling on what one settlement may credit, BTC per mining day. The
+ * amount is computed from the user's mining power, which the server now
+ * decides (helpers/rewardGrants.js), so this is only a backstop against a
+ * record that still carries an inflated figure from the old app-trusted
+ * code. 0.00005 BTC is ~82,000 GH/s for a full day; the largest honest
+ * accounts are a few thousand. Overridable without a deploy.
+ */
+export function maxSettlementBtcPerDay() {
+  const v = Number(process.env.SETTLEMENT_MAX_BTC_PER_DAY);
+  return Number.isFinite(v) && v > 0 ? v : 0.00005;
+}
+
+/**
+ * What a settled mining day pays.
+ *
+ * Until 2026-10-15 this was min(app-reported BTC, server-computed BTC). The
+ * app only reports while it is open, so a user who closed the app was paid
+ * the figure it last sent, often a fraction of a percent of what their
+ * mining power earned (79% of the 9,233 settlements in the Sep–Oct logs were
+ * underpaid). The app's figure was only ever a guard against the server's
+ * mining power being inflated by the app; the server now sets that power
+ * itself, so its own calculation is the amount paid. The app's figure is
+ * returned for the log only.
+ *
+ * @param {object} p
+ * @param {any} p.miningDetail
+ * @param {string|null} p.userTz
+ * @param {string|number} p.userOffset
+ * @param {number} [p.syncedBtc]  what the app last reported (informational)
+ * @returns {{ minedBtc:number, fromElapsed:number, syncedBtc:number, capped:boolean }}
+ */
+export function settlementAmount({ miningDetail, userTz, userOffset, syncedBtc = 0 }) {
+  const fromElapsed = Math.max(0, computeMinedBtcOnDayRollover({ miningDetail, userTz, userOffset }) || 0);
+  const cap = maxSettlementBtcPerDay();
+  const capped = fromElapsed > cap;
+  return {
+    minedBtc: capped ? cap : fromElapsed,
+    fromElapsed,
+    syncedBtc: Number(syncedBtc) || 0,
+    capped,
+  };
+}
