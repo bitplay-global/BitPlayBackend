@@ -57,7 +57,15 @@ const server = await new Promise(res => { const s = app.listen(0, '127.0.0.1', (
 const base = `http://127.0.0.1:${server.address().port}`;
 
 const uid = () => new mongoose.Types.ObjectId().toString();
-const DAY1 = '11/10/2026, 10:00:00 AM', DAY2 = '12/10/2026, 09:00:00 AM';
+// "Today" and "tomorrow" in the user's local day, so the test doesn't age:
+// a record's legacy day comes from its real updatedAt, which must not be
+// later than the day the test pretends to be.
+const isoDay = d => d.toISOString().slice(0, 10);
+const appDay = (d, t) => `${isoDay(d).slice(8, 10)}/${isoDay(d).slice(5, 7)}/${isoDay(d).slice(0, 4)}, ${t}`;
+const NOW = new Date(Date.now() + 330 * 60 * 1000); // IST
+const TOMORROW = new Date(NOW.getTime() + 86400000), YESTERDAY = new Date(NOW.getTime() - 86400000);
+const D1 = isoDay(NOW), D2 = isoDay(TOMORROW);
+const DAY1 = appDay(NOW, '10:00:00 AM'), DAY2 = appDay(TOMORROW, '09:00:00 AM');
 const post = (body, local_time = DAY1) => request(base).post('/api/user_mining')
   .send({ offset: -330, timezone: 'Asia/Kolkata', random_ads_watched: 0, local_time, ...body });
 const rec = u => Mining.findOne({ user: u }).lean();
@@ -97,17 +105,17 @@ await post({ user_id: u, hashpower: 5.5, mining_isactive: true, rewarded_ads_wat
 check('replayed ad (same count) pays once', await claimed(u) === 5.5);
 await post({ user_id: u, hashpower: 0, mining_isactive: true, rewarded_ads_watched: 0 }, DAY2);
 r = await rec(u);
-check('a new day resets the count (session never settled)', r.rewarded_ads_watched === 0 && r.adCountDay === '2026-10-12', `${r.rewarded_ads_watched} ${r.adCountDay}`);
+check('a new day resets the count (session never settled)', r.rewarded_ads_watched === 0 && r.adCountDay === D2, `${r.rewarded_ads_watched} ${r.adCountDay}`);
 await post({ user_id: u, hashpower: 5.5, mining_isactive: true, rewarded_ads_watched: 1 }, DAY2);
 check('...and the first ad of the new day pays', await claimed(u) === 11);
 
 console.log('\n--- records from before the change ---');
 u = uid();
-await Mining.collection.insertOne({ user: u, mining_isactive: true, start_time: Date.now(), claimedHashpower: 100, purchasedHashpower: 0, hashpower: 100, rewarded_ads_watched: 60, offset: -330, timezone: 'Asia/Kolkata', updatedAt: new Date('2026-10-10T08:00:00Z') });
+await Mining.collection.insertOne({ user: u, mining_isactive: true, start_time: Date.now(), claimedHashpower: 100, purchasedHashpower: 0, hashpower: 100, rewarded_ads_watched: 60, offset: -330, timezone: 'Asia/Kolkata', updatedAt: new Date(`${isoDay(YESTERDAY)}T08:00:00Z`) });
 await post({ user_id: u, hashpower: 5.5, mining_isactive: true, rewarded_ads_watched: 1 });
 check('yesterday\'s 60 does not block today', await claimed(u) === 105.5, String(await claimed(u)));
 u = uid();
-await Mining.collection.insertOne({ user: u, mining_isactive: true, start_time: Date.now(), claimedHashpower: 100, purchasedHashpower: 0, hashpower: 100, rewarded_ads_watched: 60, offset: -330, timezone: 'Asia/Kolkata', updatedAt: new Date('2026-10-11T03:00:00Z') });
+await Mining.collection.insertOne({ user: u, mining_isactive: true, start_time: Date.now(), claimedHashpower: 100, purchasedHashpower: 0, hashpower: 100, rewarded_ads_watched: 60, offset: -330, timezone: 'Asia/Kolkata', updatedAt: new Date(`${D1}T03:00:00Z`) });
 await post({ user_id: u, hashpower: 5.5, mining_isactive: true, rewarded_ads_watched: 61 });
 check('today\'s 60 still counts on deploy day', await claimed(u) === 100);
 
@@ -171,7 +179,7 @@ u = uid();
 await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: Date.now(), rewarded_ads_watched: 0 });
 await post({ user_id: u, hashpower: 25, mining_isactive: true, rewarded_ads_watched: 0 });
 r = await rec(u);
-check('streak recorded for the day', r.streakLastDate === '2026-10-11' && r.streakDays === 1, `${r.streakLastDate} ${r.streakDays}`);
+check('streak recorded for the day', r.streakLastDate === D1 && r.streakDays === 1, `${r.streakLastDate} ${r.streakDays}`);
 
 // ---- withdrawal warnings ----
 console.log('\n--- withdrawal warnings: unexplained balance (pure) ---');
