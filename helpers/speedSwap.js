@@ -21,6 +21,8 @@ import { getBtcUsdPriceCached } from "./btcPrice.js";
 
 const API = "https://api.tryspeed.com";
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 export function autoSwapUsd() {
   const v = Number(process.env.SPEED_AUTO_SWAP_USD);
   return Number.isFinite(v) && v > 0 ? v : 20;
@@ -59,9 +61,16 @@ export async function topUpSatsFromUsdt({ neededSats, request, authHeader, price
     throw new Error(`swap quote out of range: ${quotedSats} sats for $${usd} (expected ~${Math.round(expectSats)})`);
   }
 
-  const swap = await call("post", "/balances/swap", body);
-  if (!swap?.id || (swap.status && swap.status !== "completed")) {
-    throw new Error(`swap not completed: ${JSON.stringify(swap).slice(0, 200)}`);
+  let swap = await call("post", "/balances/swap", body);
+  if (!swap?.id) throw new Error(`swap not created: ${JSON.stringify(swap).slice(0, 200)}`);
+  // A new swap is reported as in progress for a moment (seen 2026-10-20: it
+  // completed ~70 ms later). Wait up to ~10 s for it to finish.
+  for (let i = 0; i < 10 && swap.status && swap.status !== "completed" && swap.status !== "failed"; i++) {
+    await sleep(1000);
+    swap = await call("get", `/balances/swap/${swap.id}`);
+  }
+  if (swap.status && swap.status !== "completed") {
+    throw new Error(`swap ${swap.id} not completed (status ${swap.status})`);
   }
   return { id: swap.id, usd, sats: Number(swap.target_amount_swap_in ?? swap.target_amount) || quotedSats };
 }

@@ -30,12 +30,13 @@ let stubPrice = 80000;
 axios.request = async (config) => {
   if (/\/balances/.test(config.url || '')) {
     swapCalls.push(config);
+    if (config.method === 'get' && /\/swap\//.test(config.url)) return { data: { id: config.url.split('/').pop(), object: 'swap', status: 'completed' } };
     if (config.method === 'get') return { data: { object: 'balance', available: [{ amount: 286.56, target_currency: 'SATS' }, { amount: speedMode === 'all-short' ? 12 : 11204.2, target_currency: 'USDT' }] } };
     const usd = Number(config.data.amount);
     const sats = usd / stubPrice * 1e8;
     if (/quote$/.test(config.url)) return { data: { object: 'swap_quote', target_amount_swap_in: sats } };
     satsToppedUp = true;
-    return { data: { id: `swap_stub_${swapCalls.length}`, object: 'swap', status: 'completed', target_amount_swap_in: sats } };
+    return { data: { id: `swap_stub_${swapCalls.length}`, object: 'swap', status: 'processing', target_amount_swap_in: sats } }; // completes on the next read, as in production
   }
   speedCalls.push(config);
   totalPayoutAttempts++;
@@ -340,7 +341,7 @@ if (price > 0) {
   w = await Withdrawal.findById(wid);
   check('approved after swapping USDT into sats', res.status === 200 && w.status === 'SENT', `status ${res.status} ${w.status} ${JSON.stringify(res.body).slice(0, 140)}`);
   check('two payout calls, both in SATS for the same amount', speedCalls.length === 2 && speedCalls.every(c => { const d = JSON.parse(c.data); return d.currency === 'SATS' && d.target_currency === 'SATS' && d.amount === Math.floor(BTC_AMOUNT * 1e8); }), `${speedCalls.length}`);
-  check('swap: balance check, quote, then one swap', swapCalls.map(c => c.url.replace('https://api.tryspeed.com', '')).join(',') === '/balances,/balances/swap/quote,/balances/swap', swapCalls.map(c => c.url).join(','));
+  check('swap: balance check, quote, one swap, then waits for it to complete', swapCalls.map(c => c.url.replace('https://api.tryspeed.com', '').replace(/swap_stub_\d+/, 'ID')).join(',') === '/balances,/balances/swap/quote,/balances/swap,/balances/swap/ID', swapCalls.map(c => c.url).join(','));
   const swapBody = swapCalls[2]?.data || {};
   check('swaps USDT -> SATS, priced in USD', swapBody.currency === 'USD' && swapBody.target_currency_swap_out === 'USDT' && swapBody.target_currency_swap_in === 'SATS');
   const neededUsd = BTC_AMOUNT * price;
