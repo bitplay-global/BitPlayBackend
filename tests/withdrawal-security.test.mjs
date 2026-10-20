@@ -22,7 +22,21 @@ let totalPayoutAttempts = 0; // never reset, unlike speedCalls
 // paid), 'no-response' (timeout: outcome unknown), 'no-id' (200 without id).
 let speedMode = 'ok';
 let speedDelayMs = 0; // widens the window for simultaneous-request tests
+// Speed's balance/swap endpoints (own-account moves, not payouts) are
+// recorded separately from payout calls.
+const swapCalls = [];
+let satsToppedUp = false;
+let stubPrice = 80000;
 axios.request = async (config) => {
+  if (/\/balances/.test(config.url || '')) {
+    swapCalls.push(config);
+    if (config.method === 'get') return { data: { object: 'balance', available: [{ amount: 286.56, target_currency: 'SATS' }, { amount: speedMode === 'all-short' ? 12 : 11204.2, target_currency: 'USDT' }] } };
+    const usd = Number(config.data.amount);
+    const sats = usd / stubPrice * 1e8;
+    if (/quote$/.test(config.url)) return { data: { object: 'swap_quote', target_amount_swap_in: sats } };
+    satsToppedUp = true;
+    return { data: { id: `swap_stub_${swapCalls.length}`, object: 'swap', status: 'completed', target_amount_swap_in: sats } };
+  }
   speedCalls.push(config);
   totalPayoutAttempts++;
   if (speedDelayMs) await new Promise(r => setTimeout(r, speedDelayMs));
@@ -37,18 +51,16 @@ axios.request = async (config) => {
     throw e;
   }
   if (speedMode === 'no-id') return { data: { status: 'unknown' } };
-  // Sats balance too small. 'sats-short': a payment funded from USDT works;
-  // 'all-short': USDT too; 'sats-short-then-silent': the USDT try gets no answer.
-  if (['sats-short', 'all-short', 'sats-short-then-silent'].includes(speedMode)) {
-    const body = JSON.parse(config.data);
-    const fromUsdt = body.currency === 'USDT';
-    if (fromUsdt && speedMode === 'sats-short') return { data: { id: `is_stub_${speedCalls.length}`, status: 'unpaid', currency: 'USDT', target_currency: 'SATS' } };
-    if (fromUsdt && speedMode === 'sats-short-then-silent') {
-      const e = new Error('timeout of 60000ms exceeded'); e.code = 'ECONNABORTED'; throw e;
-    }
+  // Sats balance too small. 'sats-short': the account swaps USDT into sats
+  // and the retry works; 'all-short': no USDT either; 'sats-short-then-silent':
+  // the swap works but the retried send gets no answer.
+  if (['sats-short', 'all-short', 'sats-short-then-silent'].includes(speedMode) && !satsToppedUp) {
     const e = new Error('Request failed with status code 400');
     e.response = { status: 400, statusText: 'Bad Request', data: { errors: [{ type: 'invalid_request_error', message: "Insufficient funds! You don't have enough funds to cover this payment and network fee." }] } };
     throw e;
+  }
+  if (speedMode === 'sats-short-then-silent') {
+    const e = new Error('timeout of 60000ms exceeded'); e.code = 'ECONNABORTED'; throw e;
   }
   return { data: { id: `is_stub_${speedCalls.length}`, status: 'unpaid' } };
 };
@@ -318,63 +330,57 @@ res = await approve(wid);
 check('a retry succeeds', res.status === 200, `status ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
 check('and the balance is taken once again (net: paid once, deducted once)', (await deposit()) === RESERVED, await deposit());
 
-console.log('\n--- Sats balance too small: one retry paid from USDT, only after a clear refusal ---');
+console.log('\n--- Sats balance too small: swap USDT into sats, send once more ---');
 if (price > 0) {
-  await reset();
-  wid = (await lnCreate()).body.withdrawal_id;
-  session = { isLoggedIn: true }; speedMode = 'sats-short';
+  stubPrice = price;
+  const freshShort = async (mode) => { await reset(); swapCalls.length = 0; satsToppedUp = false; const id = (await lnCreate()).body.withdrawal_id; session = { isLoggedIn: true }; speedMode = mode; return id; };
+
+  wid = await freshShort('sats-short');
   res = await approve(wid);
   w = await Withdrawal.findById(wid);
-  check('approved via USDT after "insufficient funds" on sats', res.status === 200 && w.status === 'SENT', `status ${res.status} ${w.status} ${JSON.stringify(res.body).slice(0, 120)}`);
-  check('exactly two calls: sats, then USDT', speedCalls.length === 2, `${speedCalls.length} call(s)`);
-  const second = JSON.parse(speedCalls[1]?.data || '{}');
-  check('second call pays FROM USDT and delivers SATS', second.currency === 'USDT' && second.target_currency === 'SATS' && second.withdraw_method === 'lightning');
-  const fairUsd = Math.floor(BTC_AMOUNT * price * 100) / 100;
-  check('USDT amount = the BTC on record at today\'s price, rounded down', second.amount === fairUsd, `${second.amount} vs ${fairUsd}`);
+  check('approved after swapping USDT into sats', res.status === 200 && w.status === 'SENT', `status ${res.status} ${w.status} ${JSON.stringify(res.body).slice(0, 140)}`);
+  check('two payout calls, both in SATS for the same amount', speedCalls.length === 2 && speedCalls.every(c => { const d = JSON.parse(c.data); return d.currency === 'SATS' && d.target_currency === 'SATS' && d.amount === Math.floor(BTC_AMOUNT * 1e8); }), `${speedCalls.length}`);
+  check('swap: balance check, quote, then one swap', swapCalls.map(c => c.url.replace('https://api.tryspeed.com', '')).join(',') === '/balances,/balances/swap/quote,/balances/swap', swapCalls.map(c => c.url).join(','));
+  const swapBody = swapCalls[2]?.data || {};
+  check('swaps USDT -> SATS, priced in USD', swapBody.currency === 'USD' && swapBody.target_currency_swap_out === 'USDT' && swapBody.target_currency_swap_in === 'SATS');
+  const neededUsd = BTC_AMOUNT * price;
+  check('swap size = buffer or 1.2x the payment, capped by USDT held', Number(swapBody.amount) >= Math.min(112.04, Math.max(20, neededUsd * 1.2)) - 0.01 && Number(swapBody.amount) <= 112.04, swapBody.amount);
   check('balance deducted once', (await deposit()) === RESERVED, await deposit());
 
-  await reset();
-  wid = (await lnCreate()).body.withdrawal_id;
-  session = { isLoggedIn: true }; speedMode = 'all-short';
+  wid = await freshShort('all-short');
   res = await approve(wid);
   w = await Withdrawal.findById(wid);
-  check('both balances short: refused, still PENDING, claim released', res.status >= 400 && w.status === 'PENDING' && w.approvalStartedAt == null, `${res.status} ${w.status}`);
-  check('both balances short: two calls, no third', speedCalls.length === 2, `${speedCalls.length}`);
-  check('both balances short: balance refunded', (await deposit()) === FULL, await deposit());
+  check('no USDT either: refused, PENDING, claim released, refunded', res.status >= 400 && w.status === 'PENDING' && w.approvalStartedAt == null && (await deposit()) === FULL, `${res.status} ${w.status} ${await deposit()}`);
+  check('no USDT either: one payout call, no swap made', speedCalls.length === 1 && !swapCalls.some(c => /swap$/.test(c.url)), `${speedCalls.length} ${swapCalls.length}`);
 
-  await reset();
-  wid = (await lnCreate()).body.withdrawal_id;
-  session = { isLoggedIn: true }; speedMode = 'sats-short-then-silent';
+  wid = await freshShort('sats-short-then-silent');
   res = await approve(wid);
   w = await Withdrawal.findById(wid);
-  check('USDT try gets no answer: locked as unknown, not refunded', res.status === 502 && w.status === 'PENDING' && w.approvalStartedAt != null && (await deposit()) === RESERVED, `${res.status} ${w.approvalStartedAt} ${await deposit()}`);
+  check('retried send gets no answer: locked as unknown, not refunded', res.status === 502 && w.approvalStartedAt != null && (await deposit()) === RESERVED, `${res.status} ${w.approvalStartedAt} ${await deposit()}`);
   res = await approve(wid);
   check('...and cannot be approved again', res.status === 409 && speedCalls.length === 2, `${res.status} calls ${speedCalls.length}`);
 
   for (const mode of ['http-error', 'no-response']) {
-    await reset();
+    await reset(); swapCalls.length = 0;
     wid = (await lnCreate()).body.withdrawal_id;
     session = { isLoggedIn: true }; speedMode = mode;
     await approve(wid);
-    check(`${mode} on the first call: no USDT retry`, speedCalls.length === 1, `${speedCalls.length}`);
+    check(`${mode} on the first call: no swap, no retry`, speedCalls.length === 1 && swapCalls.length === 0, `${speedCalls.length} ${swapCalls.length}`);
   }
 
-  await reset();
+  wid = await freshShort('sats-short');
   process.env.SPEED_USDT_FALLBACK = 'off';
-  wid = (await lnCreate()).body.withdrawal_id;
-  session = { isLoggedIn: true }; speedMode = 'sats-short';
   await approve(wid);
-  check('SPEED_USDT_FALLBACK=off: no retry', speedCalls.length === 1 && (await Withdrawal.findById(wid)).status === 'PENDING');
+  check('SPEED_USDT_FALLBACK=off: no swap, no retry', speedCalls.length === 1 && swapCalls.length === 0 && (await Withdrawal.findById(wid)).status === 'PENDING');
   delete process.env.SPEED_USDT_FALLBACK;
 
-  await reset();
-  wid = (await lnCreate()).body.withdrawal_id;
-  session = null; speedMode = 'sats-short';
+  wid = await freshShort('sats-short');
+  session = null;
   res = await approve(wid);
-  check('not logged in as admin: nothing sent at all', res.status === 401 && speedCalls.length === 0, `${res.status} ${speedCalls.length}`);
-  speedMode = 'ok';
+  check('not logged in as admin: no payout, no swap', res.status === 401 && speedCalls.length === 0 && swapCalls.length === 0, `${res.status} ${speedCalls.length} ${swapCalls.length}`);
+  speedMode = 'ok'; satsToppedUp = false;
 } else {
-  console.log('  (no BTC price available offline: USDT-fallback checks skipped)');
+  console.log('  (no BTC price available offline: swap checks skipped)');
 }
 
 console.log('\n--- Speed does not answer: locked, not refunded, not re-approvable ---');

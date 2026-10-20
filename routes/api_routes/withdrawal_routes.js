@@ -8,6 +8,7 @@ import axios from "axios";
 import dotenv from 'dotenv';
 import { getEffectiveWithdrawalLimits, belowMinimumMessage, SPEED_MIN_USDT } from "../../helpers/withdrawalLimits.js";
 import { getBtcUsdPriceCached } from "../../helpers/btcPrice.js";
+import { topUpSatsFromUsdt } from "../../helpers/speedSwap.js";
 import { mobileAppGuard } from "../../middleware/mobileAppGuard.js";
 import { requireAdminAuth } from "../../middleware/requireAdminAuth.js";
 import path from "path";
@@ -181,7 +182,7 @@ function isSpeedInsufficientFunds(err) {
   return /insufficient/i.test(text);
 }
 
-/** Pay from the USDT balance when sats run out. On unless SPEED_USDT_FALLBACK=off. */
+/** Swap USDT into sats when sats run out (helpers/speedSwap.js). On unless SPEED_USDT_FALLBACK=off. */
 function speedUsdtFallbackEnabled() {
   return String(process.env.SPEED_USDT_FALLBACK || "on").toLowerCase() !== "off";
 }
@@ -832,34 +833,31 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
       try {
         responsespeed = await axios.request(config);
       } catch (firstErr) {
-        // Paid from the account's SATS balance first. If Speed refuses that
-        // with an answer saying the sats are insufficient, nothing was sent,
-        // so the same approval may try once more paying FROM the USDT
-        // balance and delivering sats (Speed converts). Any other outcome of
-        // the first attempt -- no answer, another error -- is handled below
-        // exactly as before; never a second attempt after an unknown result.
+        // Paid from the account's SATS balance. If Speed refuses with an
+        // answer saying the sats are insufficient, nothing was sent. Speed
+        // always takes a Lightning payout from the SATS balance (a send
+        // priced in USDT still draws sats -- tried 2026-10-20), so instead
+        // the account's own USDT is swapped into sats (helpers/speedSwap.js:
+        // a buffer, not just this payment, as Speed allows 3 swaps a day)
+        // and the SAME payment is sent once more. Any other outcome of the
+        // first attempt -- no answer, another error -- is handled below
+        // exactly as before; never a second send after an unknown result.
         if (!isSpeedInsufficientFunds(firstErr) || !speedUsdtFallbackEnabled()) throw firstErr;
-        const btcUsd = await getBtcUsdPriceCached(60_000);
-        if (!(btcUsd > 0)) throw firstErr;
-        // Rounded DOWN to the cent: the user never receives more than was
-        // deducted from their balance.
-        const usdtAmount = Math.floor((satsForSpeed / 1e8) * btcUsd * 100) / 100;
-        if (!(usdtAmount >= SPEED_MIN_USDT)) throw firstErr;
-        const fromUsdt = JSON.stringify({
-          ...JSON.parse(dataspeed),
-          amount: usdtAmount,
-          currency: "USDT",
-          target_currency: "SATS",
-        });
-        console.log("Speed API payload (approve, paid from USDT):", fromUsdt);
-        logWithdrawApprove("speed_retry_from_usdt", {
+        let swap;
+        try {
+          swap = await topUpSatsFromUsdt({ neededSats: satsForSpeed, request: axios.request, authHeader: getSpeedAuthHeader() });
+        } catch (swapErr) {
+          console.error(`[approve] USDT->SATS swap failed for withdrawal ${withdrawal._id}: ${swapErr.message}`);
+          logWithdrawApprove("speed_swap_failed", { route: "PATCH /withdrawals/:id/approve", withdrawalId: req.params.id, error: swapErr.message });
+          throw firstErr; // nothing was paid: refund + release below
+        }
+        logWithdrawApprove("speed_swapped_usdt_to_sats", {
           route: "PATCH /withdrawals/:id/approve",
           withdrawalId: req.params.id,
-          sats: satsForSpeed,
-          usdtAmount,
-          btcUsd,
+          neededSats: satsForSpeed,
+          swap,
         });
-        config.data = fromUsdt;
+        console.log(`[approve] swapped ${swap.usd} USD of USDT into ${swap.sats} sats (${swap.id}); retrying withdrawal ${withdrawal._id}`);
         responsespeed = await axios.request(config);
       }
     } catch (apiError) {
