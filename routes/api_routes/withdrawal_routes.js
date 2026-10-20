@@ -171,6 +171,21 @@ function isValidSpeedLN(address) {
 /**
  * Helper: build Basic auth header from Speed API key
  */
+/** Speed answered (HTTP error) that the balance can't cover the payment. */
+function isSpeedInsufficientFunds(err) {
+  if (!err?.response) return false;
+  const errors = err.response.data?.errors;
+  const text = Array.isArray(errors)
+    ? errors.map(e => e?.message || "").join(" ")
+    : String(err.response.data?.message || "");
+  return /insufficient/i.test(text);
+}
+
+/** Pay from the USDT balance when sats run out. On unless SPEED_USDT_FALLBACK=off. */
+function speedUsdtFallbackEnabled() {
+  return String(process.env.SPEED_USDT_FALLBACK || "on").toLowerCase() !== "off";
+}
+
 function getSpeedAuthHeader() {
   return "Basic " + Buffer.from(SPEED_API_KEY + ":").toString("base64");
 }
@@ -814,7 +829,39 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
     let responsespeed;
     try {
       paymentAttempted = true;
-      responsespeed = await axios.request(config);
+      try {
+        responsespeed = await axios.request(config);
+      } catch (firstErr) {
+        // Paid from the account's SATS balance first. If Speed refuses that
+        // with an answer saying the sats are insufficient, nothing was sent,
+        // so the same approval may try once more paying FROM the USDT
+        // balance and delivering sats (Speed converts). Any other outcome of
+        // the first attempt -- no answer, another error -- is handled below
+        // exactly as before; never a second attempt after an unknown result.
+        if (!isSpeedInsufficientFunds(firstErr) || !speedUsdtFallbackEnabled()) throw firstErr;
+        const btcUsd = await getBtcUsdPriceCached(60_000);
+        if (!(btcUsd > 0)) throw firstErr;
+        // Rounded DOWN to the cent: the user never receives more than was
+        // deducted from their balance.
+        const usdtAmount = Math.floor((satsForSpeed / 1e8) * btcUsd * 100) / 100;
+        if (!(usdtAmount >= SPEED_MIN_USDT)) throw firstErr;
+        const fromUsdt = JSON.stringify({
+          ...JSON.parse(dataspeed),
+          amount: usdtAmount,
+          currency: "USDT",
+          target_currency: "SATS",
+        });
+        console.log("Speed API payload (approve, paid from USDT):", fromUsdt);
+        logWithdrawApprove("speed_retry_from_usdt", {
+          route: "PATCH /withdrawals/:id/approve",
+          withdrawalId: req.params.id,
+          sats: satsForSpeed,
+          usdtAmount,
+          btcUsd,
+        });
+        config.data = fromUsdt;
+        responsespeed = await axios.request(config);
+      }
     } catch (apiError) {
       // No HTTP answer (timeout, connection reset): Speed may have paid.
       // Keep the claim and the deducted balance; an admin must check Speed.
