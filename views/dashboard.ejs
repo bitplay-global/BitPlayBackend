@@ -189,8 +189,8 @@
 
     <script>
       (function () {
-        var chartLabels = <% - JSON.stringify((typeof data !== 'undefined' && data.chartLabels && data.chartLabels.length) ? data.chartLabels : ['No data']) %>;
-        var chartData = <% - JSON.stringify((typeof data !== 'undefined' && data.chartData && data.chartData.length) ? data.chartData : [0]) %>;
+        var chartLabels = <%- JSON.stringify((typeof data !== 'undefined' && data.chartLabels && data.chartLabels.length) ? data.chartLabels : ['No data']) %>;
+        var chartData = <%- JSON.stringify((typeof data !== 'undefined' && data.chartData && data.chartData.length) ? data.chartData : [0]) %>;
         var ctx = document.getElementById('performanceChart');
         if (ctx) {
           new Chart(ctx.getContext('2d'), {
