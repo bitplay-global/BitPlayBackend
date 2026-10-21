@@ -164,9 +164,32 @@ if (fs.existsSync(rpcPath)) {
   console.warn(`⚠️ Lightning client not initialized: RPC socket not found at ${rpcPath}`);
 }
 
-function isValidSpeedLN(address) {
-  const regex = /^[a-zA-Z0-9_-]+@speed\.app$/;
-  return regex.test(address);
+/**
+ * Withdrawals go to a Lightning address (LUD-16: `name@domain`, e.g.
+ * yourname@speed.app, yourname@zbd.gg); Speed can pay any of them. Until
+ * 2026-10-21 only @speed.app was accepted, which pushed users of other
+ * wallets to paste an invoice with "@speed.app" typed on the end. A Lightning
+ * invoice (lnbc...) expires within hours, too soon for a reviewed withdrawal,
+ * so it is refused with its own message. Must match the app's
+ * src/utils/lightningAddress.ts.
+ */
+const LIGHTNING_ADDRESS = /^[a-z0-9._+-]{1,64}@(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+function normalizeLightningAddress(address) {
+  return typeof address === "string" ? address.trim().toLowerCase() : "";
+}
+function isValidLightningAddress(address) {
+  return LIGHTNING_ADDRESS.test(normalizeLightningAddress(address));
+}
+function looksLikeInvoice(address) {
+  return typeof address === "string" && /^(lightning:)?ln(bc|tb|bcrt)[0-9a-z]{50,}/i.test(address.trim());
+}
+function lightningAddressError(address) {
+  if (looksLikeInvoice(address)) {
+    return "That looks like a Lightning invoice. Please use your Lightning address instead (it looks like yourname@speed.app).";
+  }
+  return isValidLightningAddress(address)
+    ? null
+    : "Invalid withdrawal address. Use your Lightning address, e.g. yourname@speed.app.";
 }
 
 /**
@@ -443,10 +466,11 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
         .json({ error: "amountBtc is required (BTC amount to withdraw from BTC_DEPOSIT)." });
     }
 
-    if (typeof toAddress !== "string" || !isValidSpeedLN(toAddress.trim())) {
-      return res.status(400).json({ error: "Invalid withdrawal address. Use a valid Speed address (name@speed.app)." });
+    const addressError = lightningAddressError(toAddress);
+    if (addressError) {
+      return res.status(400).json({ error: addressError });
     }
-    toAddress = toAddress.trim();
+    toAddress = normalizeLightningAddress(toAddress);
 
     const btcStr =
       typeof amountBtc === "object" && amountBtc !== null && amountBtc.toString
@@ -1251,9 +1275,11 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
       return res.status(400).json({ error: "User not found" });
     }
 
-    if (!speed_wallet_address || !isValidSpeedLN(speed_wallet_address)) {
-      return res.status(400).json({ error: "Invalid Speed wallet address" });
+    const lnAddressError = lightningAddressError(speed_wallet_address);
+    if (lnAddressError) {
+      return res.status(400).json({ error: lnAddressError });
     }
+    const lightningAddress = normalizeLightningAddress(speed_wallet_address);
 
     // Check if user already has a pending withdrawal request
     const existingPending = await Withdrawal.findOne({ userId: metadata.user_id, status: "PENDING" });
@@ -1339,7 +1365,7 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
             userId: metadata.user_id,
             asset: target_currency,
             chain: "BTC",
-            toAddress: speed_wallet_address,
+            toAddress: lightningAddress,
             amountNumeric: amount,
             defaultAmountNumeric: mongoose.Types.Decimal128.fromString(Number(btcAmount).toFixed(16)),
             status: "PENDING",

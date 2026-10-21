@@ -331,6 +331,34 @@ res = await approve(wid);
 check('a retry succeeds', res.status === 200, `status ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
 check('and the balance is taken once again (net: paid once, deducted once)', (await deposit()) === RESERVED, await deposit());
 
+console.log('\n--- Lightning addresses: any wallet accepted, invoices refused ---');
+const createTo = (addr) => request(base).post('/api/withdrawals/create-speed-payment').set(MOBILE).send({
+  amount: USD_AMOUNT, baseAmount: BTC_AMOUNT, defaultAmountNumeric: BTC_AMOUNT,
+  currency: 'USD', target_currency: 'USDT', speed_wallet_address: addr, metadata: { user_id: USER },
+});
+for (const addr of ['satoshi@zbd.gg', 'first.last@walletofsatoshi.com', '  Tester@Speed.App ']) {
+  await reset();
+  res = await createTo(addr);
+  const rec = res.body?.withdrawal_id ? await Withdrawal.findById(res.body.withdrawal_id) : null;
+  check(`accepts ${JSON.stringify(addr)}, stored normalised`, res.status === 200 && rec?.toAddress === addr.trim().toLowerCase(), `${res.status} ${rec?.toAddress} ${JSON.stringify(res.body).slice(0, 100)}`);
+}
+const INVOICE = 'lnbc13900n1p4dgdvvpp5td6lz4pxtd8g96pmqnhgr4kdg53zfrdnmyyjx78ryuvssj29vsnsdqqcqzzsxqyz5vqsp5536ax8pzhuc990q9rltjqu2crggq0vcnzqurjmwskxv2uqxuudmq9qxpqysgqxd4aql8uv0q7xzrd2a83gm5qwyqgnz9ekmwrd4mmwwmf8lleuhz5ky9a96ul4tjnu726sr4h8gje3h3vr9r7qd4se7gawqng8xwdujgq9zyt2d';
+for (const addr of [INVOICE, `${INVOICE}@speed.app`]) {
+  await reset();
+  res = await createTo(addr);
+  check(`refuses an invoice${addr.endsWith('@speed.app') ? ' with @speed.app added (19 Oct case)' : ''}`, res.status === 400 && /invoice/i.test(res.body?.error || ''), `${res.status} ${res.body?.error}`);
+}
+for (const addr of ['not-an-address', 'name@', 'name@speed', '']) {
+  await reset();
+  res = await createTo(addr);
+  check(`refuses ${JSON.stringify(addr)}`, res.status === 400, `${res.status}`);
+}
+await reset();
+res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: 'satoshi@zbd.gg', amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
+check('POST / also accepts a non-Speed Lightning address', res.status === 201, `${res.status} ${JSON.stringify(res.body).slice(0, 100)}`);
+res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: `${INVOICE}@speed.app`, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
+check('POST / refuses an invoice too', res.status === 400 && /invoice/i.test(res.body?.error || ''), `${res.status}`);
+
 console.log('\n--- Sats balance too small: swap USDT into sats, send once more ---');
 if (price > 0) {
   stubPrice = price;
