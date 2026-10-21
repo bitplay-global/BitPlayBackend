@@ -1,3 +1,4 @@
+import { noOperatorInjection } from './middleware/noOperatorInjection.js';
 import './config/loadEnv.js';
 import express from 'express';
 import crypto from 'crypto';
@@ -89,6 +90,10 @@ app.use(session({
 // Body parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Refuse MongoDB operators smuggled through query strings or bodies
+// (see middleware/noOperatorInjection.js). Not on /webhooks: RevenueCat
+// events legitimately carry attribute keys like "$email".
+app.use(['/api', '/admin'], noOperatorInjection);
 
 // Set view engine
 app.set('view engine', 'ejs');
