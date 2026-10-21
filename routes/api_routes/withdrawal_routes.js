@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import { getEffectiveWithdrawalLimits, belowMinimumMessage, SPEED_MIN_USDT } from "../../helpers/withdrawalLimits.js";
 import { getBtcUsdPriceCached } from "../../helpers/btcPrice.js";
 import { topUpSatsFromUsdt } from "../../helpers/speedSwap.js";
+import { checkDestination, checkStoredDestinationForPayment } from "../../helpers/withdrawalDestination.js";
 import { mobileAppGuard } from "../../middleware/mobileAppGuard.js";
 import { requireAdminAuth } from "../../middleware/requireAdminAuth.js";
 import path from "path";
@@ -162,34 +163,6 @@ if (fs.existsSync(rpcPath)) {
   client = new Client(rpcPath);
 } else {
   console.warn(`⚠️ Lightning client not initialized: RPC socket not found at ${rpcPath}`);
-}
-
-/**
- * Withdrawals go to a Lightning address (LUD-16: `name@domain`, e.g.
- * yourname@speed.app, yourname@zbd.gg); Speed can pay any of them. Until
- * 2026-10-21 only @speed.app was accepted, which pushed users of other
- * wallets to paste an invoice with "@speed.app" typed on the end. A Lightning
- * invoice (lnbc...) expires within hours, too soon for a reviewed withdrawal,
- * so it is refused with its own message. Must match the app's
- * src/utils/lightningAddress.ts.
- */
-const LIGHTNING_ADDRESS = /^[a-z0-9._+-]{1,64}@(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
-function normalizeLightningAddress(address) {
-  return typeof address === "string" ? address.trim().toLowerCase() : "";
-}
-function isValidLightningAddress(address) {
-  return LIGHTNING_ADDRESS.test(normalizeLightningAddress(address));
-}
-function looksLikeInvoice(address) {
-  return typeof address === "string" && /^(lightning:)?ln(bc|tb|bcrt)[0-9a-z]{50,}/i.test(address.trim());
-}
-function lightningAddressError(address) {
-  if (looksLikeInvoice(address)) {
-    return "That looks like a Lightning invoice. Please use your Lightning address instead (it looks like yourname@speed.app).";
-  }
-  return isValidLightningAddress(address)
-    ? null
-    : "Invalid withdrawal address. Use your Lightning address, e.g. yourname@speed.app.";
 }
 
 /**
@@ -466,11 +439,6 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
         .json({ error: "amountBtc is required (BTC amount to withdraw from BTC_DEPOSIT)." });
     }
 
-    const addressError = lightningAddressError(toAddress);
-    if (addressError) {
-      return res.status(400).json({ error: addressError });
-    }
-    toAddress = normalizeLightningAddress(toAddress);
 
     const btcStr =
       typeof amountBtc === "object" && amountBtc !== null && amountBtc.toString
@@ -480,6 +448,14 @@ router.post("/", requireWithdrawalAccess, async (req, res) => {
     if (!Number.isFinite(btcNum) || btcNum <= 0) {
       return res.status(400).json({ error: "Invalid withdrawal amount (BTC)." });
     }
+
+    // A Lightning address, or an invoice for exactly this amount that is
+    // still valid (helpers/withdrawalDestination.js).
+    const destination = checkDestination(toAddress, { expectedSats: Math.round(btcNum * 1e8) });
+    if (!destination.ok) {
+      return res.status(400).json({ error: destination.error });
+    }
+    toAddress = destination.value;
 
     const limits = await getEffectiveWithdrawalLimits();
     const { minBtc, maxBtc } = limits;
@@ -750,7 +726,28 @@ router.patch("/:id/approve", requireAdminAuth, async (req, res) => {
         ? withdrawal.defaultAmountNumeric.toString()
         : withdrawal.defaultAmountNumeric
     );
-    const satsForSpeed = Number.isFinite(btcForSpeed) ? Math.floor(btcForSpeed * 1e8) : 0;
+    let satsForSpeed = Number.isFinite(btcForSpeed) ? Math.floor(btcForSpeed * 1e8) : 0;
+
+    // An invoice expires; check it before anything is deducted or sent. It
+    // is paid exactly its own amount, which must not exceed the BTC on record
+    // (it was checked to be equal when the request was made).
+    const payable = checkStoredDestinationForPayment(withdrawal.toAddress);
+    if (!payable.ok) {
+      logWithdrawApprove("destination_not_payable", {
+        route: "PATCH /withdrawals/:id/approve",
+        withdrawalId: req.params.id,
+        error: payable.error,
+      });
+      await releaseClaim();
+      return res.status(400).json({ error: payable.error });
+    }
+    if (payable.kind === "invoice") {
+      if (payable.sats > Math.round(btcForSpeed * 1e8)) {
+        await releaseClaim();
+        return res.status(400).json({ error: `The invoice asks for ${payable.sats} sats, more than this withdrawal (${Math.round(btcForSpeed * 1e8)} sats). Reject it.` });
+      }
+      satsForSpeed = payable.sats;
+    }
     if (satsForSpeed < 1) {
       logWithdrawApprove("no_btc_amount_for_sats", {
         route: "PATCH /withdrawals/:id/approve",
@@ -1275,11 +1272,13 @@ router.post("/create-speed-payment", requireWithdrawalAccess, async (req, res) =
       return res.status(400).json({ error: "User not found" });
     }
 
-    const lnAddressError = lightningAddressError(speed_wallet_address);
-    if (lnAddressError) {
-      return res.status(400).json({ error: lnAddressError });
+    // A Lightning address, or an invoice for exactly this amount that is
+    // still valid (helpers/withdrawalDestination.js).
+    const destination = checkDestination(speed_wallet_address, { expectedSats: Math.round(btcAmountNum * 1e8) });
+    if (!destination.ok) {
+      return res.status(400).json({ error: destination.error });
     }
-    const lightningAddress = normalizeLightningAddress(speed_wallet_address);
+    const lightningAddress = destination.value;
 
     // Check if user already has a pending withdrawal request
     const existingPending = await Withdrawal.findOne({ userId: metadata.user_id, status: "PENDING" });

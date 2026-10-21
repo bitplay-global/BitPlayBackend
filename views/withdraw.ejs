@@ -64,6 +64,10 @@
               const warnings = [];
               if (unx) warnings.push('Unexplained balance: holds or was paid ' + btc8(unx.held) + ' BTC, its history explains ' + btc8(unx.explained) + ' BTC.');
               if (shared) warnings.push('Payout address also used by ' + shared.accounts.length + ' other account(s)' + (shared.sentToOthers ? ', already paid to them ' + shared.sentToOthers + ' time(s)' : '') + '.');
+              const invExp = w.invoiceExpiresAt ? new Date(w.invoiceExpiresAt * 1000) : null;
+              const invExpired = invExp && invExp.getTime() <= Date.now() + 60000;
+              const invExpText = invExp ? invExp.toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '';
+              if (invExpired && w.status === 'PENDING') warnings.push('The invoice expired at ' + invExpText + ' and can no longer be paid: reject this request.');
             %>
             <tr data-id="<%= w._id %>" data-warnings="<%= warnings.join(' ') %>">
               <td><%= (page - 1) * limit + index + 1 %></td>
@@ -75,6 +79,11 @@
                 <% const addr = (w.toAddress || '-'); const addrEsc = addr.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); %>
                 <span class="withdrawal-address" title="<%= addrEsc %>" data-address="<%= addrEsc %>" style="max-width: 160px; display: inline-block; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; cursor: pointer;" role="button" tabindex="0"><%= addr %></span>
                 <button type="button" class="btn btn-sm btn-outline-secondary copy-address-btn ms-1" title="Copy address" data-address="<%= addrEsc %>" aria-label="Copy address">&nbsp;&#9100;&nbsp;</button>
+                <% if (invExp) { %>
+                  <br><span class="badge <%= invExpired ? 'bg-danger' : 'bg-info text-dark' %>" title="Lightning invoice: one-time, for a fixed amount, expires">
+                    <%= invExpired ? '⚠ INVOICE EXPIRED ' : 'Invoice · expires ' %><%= invExpText %>
+                  </span>
+                <% } %>
               </td>
               <td class="<%= w.exceedsBalance ? 'text-danger fw-bold' : '' %>">
                 <%= w.displayAmount || '0' %> <%= w.asset %> / <%= w.displayBtc != null ? w.displayBtc + ' BTC' : '— BTC' %>

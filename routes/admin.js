@@ -24,6 +24,7 @@ import BalanceHistory from '../models/BalanceHistory.js';
 import { sendCustomNotification, sendBulkNotifications } from '../services/notificationService.js';
 import AdMultiplierPrivilege from '../models/AdMultiplierPrivilege.js';
 import { assessWithdrawals } from '../helpers/withdrawalRisk.js';
+import { invoiceExpiry } from '../helpers/withdrawalDestination.js';
 import { escapeRegex } from "../helpers/escapeRegex.js";
 import { safeAdminNext, ADMIN_HOME } from '../helpers/adminRedirect.js';
 
@@ -1358,7 +1359,9 @@ router.get("/withdrawals", requireAuth, async (req, res) => {
         userBalanceMinedBtc: userBalance != null ? userBalance.mined.toFixed(16) : null,
         userBalanceDepositBtc: userBalance != null ? userBalance.deposit.toFixed(16) : null,
         exceedsBalance,
-        risk: risk.get(String(w._id)) || null
+        risk: risk.get(String(w._id)) || null,
+        // Unix seconds when an invoice destination expires; null for an address.
+        invoiceExpiresAt: invoiceExpiry(w.toAddress)
       };
     });
 

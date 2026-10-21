@@ -331,7 +331,7 @@ res = await approve(wid);
 check('a retry succeeds', res.status === 200, `status ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
 check('and the balance is taken once again (net: paid once, deducted once)', (await deposit()) === RESERVED, await deposit());
 
-console.log('\n--- Lightning addresses: any wallet accepted, invoices refused ---');
+console.log('\n--- Lightning address or invoice, in one field ---');
 const createTo = (addr) => request(base).post('/api/withdrawals/create-speed-payment').set(MOBILE).send({
   amount: USD_AMOUNT, baseAmount: BTC_AMOUNT, defaultAmountNumeric: BTC_AMOUNT,
   currency: 'USD', target_currency: 'USDT', speed_wallet_address: addr, metadata: { user_id: USER },
@@ -340,24 +340,80 @@ for (const addr of ['satoshi@zbd.gg', 'first.last@walletofsatoshi.com', '  Teste
   await reset();
   res = await createTo(addr);
   const rec = res.body?.withdrawal_id ? await Withdrawal.findById(res.body.withdrawal_id) : null;
-  check(`accepts ${JSON.stringify(addr)}, stored normalised`, res.status === 200 && rec?.toAddress === addr.trim().toLowerCase(), `${res.status} ${rec?.toAddress} ${JSON.stringify(res.body).slice(0, 100)}`);
-}
-const INVOICE = 'lnbc13900n1p4dgdvvpp5td6lz4pxtd8g96pmqnhgr4kdg53zfrdnmyyjx78ryuvssj29vsnsdqqcqzzsxqyz5vqsp5536ax8pzhuc990q9rltjqu2crggq0vcnzqurjmwskxv2uqxuudmq9qxpqysgqxd4aql8uv0q7xzrd2a83gm5qwyqgnz9ekmwrd4mmwwmf8lleuhz5ky9a96ul4tjnu726sr4h8gje3h3vr9r7qd4se7gawqng8xwdujgq9zyt2d';
-for (const addr of [INVOICE, `${INVOICE}@speed.app`]) {
-  await reset();
-  res = await createTo(addr);
-  check(`refuses an invoice${addr.endsWith('@speed.app') ? ' with @speed.app added (19 Oct case)' : ''}`, res.status === 400 && /invoice/i.test(res.body?.error || ''), `${res.status} ${res.body?.error}`);
+  check(`address ${JSON.stringify(addr)} accepted, stored normalised`, res.status === 200 && rec?.toAddress === addr.trim().toLowerCase(), `${res.status} ${rec?.toAddress} ${JSON.stringify(res.body).slice(0, 100)}`);
 }
 for (const addr of ['not-an-address', 'name@', 'name@speed', '']) {
   await reset();
   res = await createTo(addr);
   check(`refuses ${JSON.stringify(addr)}`, res.status === 400, `${res.status}`);
 }
+
+// Test invoices: real BOLT11 layout and checksum (the server reads amount,
+// network and expiry; Speed checks the signature, so a zero one is fine here).
+const B32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+const polymod = v => { let c = 1; for (const x of v) { const t = c >>> 25; c = ((c & 0x1ffffff) << 5) ^ x; for (let i = 0; i < 5; i++) if ((t >>> i) & 1) c ^= GEN[i]; } return c >>> 0; };
+const hrpExp = h => [...[...h].map(c => c.charCodeAt(0) >> 5), 0, ...[...h].map(c => c.charCodeAt(0) & 31)];
+const intWords = (n, len) => { const w = []; for (let i = 0; i < len; i++) { w.unshift(n % 32); n = Math.floor(n / 32); } return w; };
+const makeInvoice = ({ sats, net = 'bc', createdAgo = 0, expiry = 86400 }) => {
+  const hrp = `ln${net}${sats == null ? '' : `${sats * 10}n`}`;
+  const ts = Math.floor(Date.now() / 1000) - createdAgo;
+  const expWords = intWords(expiry, expiry < 1024 ? 2 : expiry < 32768 ? 3 : 4);
+  const data = [...intWords(ts, 7), B32.indexOf('p'), 1, 20, ...new Array(52).fill(0), B32.indexOf('x'), 0, expWords.length, ...expWords, ...new Array(104).fill(0)];
+  const mod = polymod([...hrpExp(hrp), ...data, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const chk = [0, 1, 2, 3, 4, 5].map(i => (mod >> (5 * (5 - i))) & 31);
+  return hrp + '1' + [...data, ...chk].map(w => B32[w]).join('');
+};
+const SATS = Math.round(BTC_AMOUNT * 1e8);
+
+await reset();
+const good = makeInvoice({ sats: SATS });
+res = await createTo(`lightning:${good.toUpperCase()}`);
+let invRec = res.body?.withdrawal_id ? await Withdrawal.findById(res.body.withdrawal_id) : null;
+check('invoice for the exact amount accepted, stored as the invoice', res.status === 200 && invRec?.toAddress === good, `${res.status} ${res.body?.error || ''}`);
+for (const [label, inv, re] of [
+  ['an invoice for a different amount', makeInvoice({ sats: SATS + 500 }), /different|is for/i],
+  ['an invoice with no amount', makeInvoice({ sats: null }), /no amount/i],
+  ['an expired invoice', makeInvoice({ sats: SATS, createdAgo: 90000 }), /expired/i],
+  ['an invoice with 5 minutes left', makeInvoice({ sats: SATS, expiry: 300 }), /expires in a few minutes/i],
+  ['a testnet invoice', makeInvoice({ sats: SATS, net: 'tb' }), /main network/i],
+  ['an invoice with @speed.app added (19 Oct case)', `${good}@speed.app`, /isn't valid/i],
+  ['an invoice with one character changed', good.slice(0, 60) + (good[60] === 'q' ? 'p' : 'q') + good.slice(61), /isn't valid/i],
+]) {
+  await reset();
+  res = await createTo(inv);
+  check(`refuses ${label}`, res.status === 400 && re.test(res.body?.error || ''), `${res.status} ${res.body?.error}`);
+}
+
 await reset();
 res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: 'satoshi@zbd.gg', amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
-check('POST / also accepts a non-Speed Lightning address', res.status === 201, `${res.status} ${JSON.stringify(res.body).slice(0, 100)}`);
-res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: `${INVOICE}@speed.app`, amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
-check('POST / refuses an invoice too', res.status === 400 && /invoice/i.test(res.body?.error || ''), `${res.status}`);
+check('POST / accepts a non-Speed Lightning address', res.status === 201, `${res.status} ${JSON.stringify(res.body).slice(0, 100)}`);
+await reset();
+res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: makeInvoice({ sats: SATS }), amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
+check('POST / accepts a valid invoice too', res.status === 201, `${res.status} ${res.body?.error || ''}`);
+res = await request(base).post('/api/withdrawals').set(MOBILE).send({ userId: USER, toAddress: makeInvoice({ sats: SATS, createdAgo: 90000 }), amountNumeric: USD_AMOUNT, amountBtc: BTC_AMOUNT });
+check('POST / refuses an expired invoice', res.status === 400 && /expired/i.test(res.body?.error || ''), `${res.status}`);
+
+console.log('\n--- Approving an invoice withdrawal ---');
+await reset();
+const payInv = makeInvoice({ sats: SATS });
+wid = (await createTo(payInv)).body.withdrawal_id;
+session = { isLoggedIn: true }; speedMode = 'ok';
+res = await approve(wid);
+const sentInv = JSON.parse(speedCalls[0]?.data || '{}');
+check('valid invoice: paid, exactly its amount, to the invoice', res.status === 200 && sentInv.withdraw_request === payInv && sentInv.amount === SATS && sentInv.currency === 'SATS', `${res.status} ${JSON.stringify(sentInv).slice(0, 120)}`);
+check('valid invoice: record SENT', (await Withdrawal.findById(wid)).status === 'SENT');
+
+await reset();
+wid = (await createTo(makeInvoice({ sats: SATS }))).body.withdrawal_id;
+await Withdrawal.updateOne({ _id: wid }, { $set: { toAddress: makeInvoice({ sats: SATS, createdAgo: 90000 }) } }); // it expired while waiting
+session = { isLoggedIn: true };
+res = await approve(wid);
+w = await Withdrawal.findById(wid);
+check('invoice expired while waiting: approval refused with a clear message', res.status === 400 && /expired/i.test(res.body?.error || ''), `${res.status} ${res.body?.error}`);
+check('...Speed not called, still PENDING, claim released (admin can reject)', speedCalls.length === 0 && w.status === 'PENDING' && w.approvalStartedAt == null);
+res = await request(base).patch(`/api/withdrawals/${wid}/reject`).send({ note: 'invoice expired' });
+check('...and rejecting it refunds the balance', res.status === 200 && (await deposit()) === FULL, `${res.status} ${await deposit()}`);
 
 console.log('\n--- Sats balance too small: swap USDT into sats, send once more ---');
 if (price > 0) {
