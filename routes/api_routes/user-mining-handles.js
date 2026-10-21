@@ -4,7 +4,10 @@ import Balance from "../../models/Balance.js";
 import DailyFreeMiner from "../../models/DailyMiner.js";
 import AdMultiplierPrivilege from "../../models/AdMultiplierPrivilege.js";
 import DailyReward from "../../models/DailyReward.js";
-import { computeStreak, dayStringFromLocalTime, dayStringFromOffset, toDayString } from "../../helpers/streak.js";
+import {
+  trustedDay, isPlausibleDay, isPlausibleOffset, isValidTimeZone, isPlausibleTimestamp, dayFromLocalTime,
+} from "../../helpers/clientTime.js";
+import { computeStreak } from "../../helpers/streak.js";
 import {
   decideGrant, applyGameBudget, adCounter, privilegeGhFromRows, DEFAULT_MAX_GAME_GRANT_GH,
 } from "../../helpers/rewardGrants.js";
@@ -53,14 +56,18 @@ async function maxGameGrantGh() {
   return maxGameGrantCache.value;
 }
 
-/** The user's local day for a request: same sources, same order, as the streak. */
-function requestDayString({ local_time, offset, local_start_time }) {
-  return (
-    dayStringFromLocalTime(local_time) ||
-    dayStringFromOffset(offset) ||
-    dayStringFromLocalTime(local_start_time) ||
-    toDayString(new Date())
-  );
+/**
+ * The user's local day for a request (streak and daily limits). Client dates
+ * are used only when they are "today" in some real timezone; a future or
+ * impossible date is ignored and the server's clock decides instead
+ * (helpers/clientTime.js). Logged so tampering is visible.
+ */
+function requestDayString({ local_time, offset, local_start_time, storedOffset }, userId) {
+  const t = trustedDay({ local_time, offset, local_start_time, storedOffset });
+  if (t.ignored.length) {
+    console.warn(`[ClientTime] user ${userId}: ignored implausible ${t.ignored.join(", ")}; using ${t.day} (${t.source})`);
+  }
+  return t.day;
 }
 
 const isSameLocalDay = (date1, date2) =>
@@ -400,7 +407,8 @@ router.get("/:userId", async (req, res) => {
 // POST create or update user mining details
 router.post("/", async (req, res) => {
   try {
-    const {
+    // let: start_time may be replaced when the app's clock is in the future.
+    let {
       user_id,
       hashpower,
       mining_isactive,
@@ -443,7 +451,7 @@ router.post("/", async (req, res) => {
     let adCapReached = false;
 
     // The user's local day, for the streak and the daily reward limits.
-    const todayStr = requestDayString({ local_time, offset, local_start_time });
+    const todayStr = requestDayString({ local_time, offset, local_start_time, storedOffset: existingRecord?.offset }, user_id);
 
     // How much of the requested `hashpower` is actually granted is decided by
     // the server (helpers/rewardGrants.js); the app's number is only a request.
@@ -563,25 +571,28 @@ router.post("/", async (req, res) => {
     if (typeof thirty_gh_rewarded_ads_watched === "number") updateData.thirty_gh_rewarded_ads_watched = cappedThirtyGh;
     if (typeof random_ads_watched === "number") updateData.random_ads_watched = random_ads_watched;
     if (typeof mining_isactive === "boolean") updateData.mining_isactive = mining_isactive;
-    if (typeof stop_time === "number") updateData.stop_time = stop_time;
+    // A stop time in the future (or absurdly old) is a wrong or tampered clock.
+    if (typeof stop_time === "number" && isPlausibleTimestamp(stop_time)) updateData.stop_time = stop_time;
 
 
     // Start/stop local timestamps
     // - When starting a NEW session (previously inactive), allow setting a fresh local_start_time.
     // - When stopping, clear local_start_time and set local_stop_time.
     // This prevents stale local_start_time causing unintended "midnight" resets on next screen focus.
+    // Local start/stop strings are only kept when their day is possible now;
+    // otherwise the server derives them from its own clock below.
+    const plausibleLocal = (v) =>
+      typeof v === "string" && v.trim() !== "" && isPlausibleDay(dayFromLocalTime(v));
     const resolvedLocalStopTime =
-      (typeof local_stop_time === "string" && local_stop_time.trim() !== "")
+      plausibleLocal(local_stop_time)
         ? local_stop_time
-        : ((typeof local_end_time === "string" && local_end_time.trim() !== "")
-          ? local_end_time
-          : null);
+        : (plausibleLocal(local_end_time) ? local_end_time : null);
 
     if (incomingMiningActive) {
       // Clear any previous stop time when mining becomes active
       updateData.local_stop_time = null;
 
-      if (typeof local_start_time === "string" && local_start_time.trim() !== "") {
+      if (plausibleLocal(local_start_time)) {
         // Only set start time if there isn't one OR the previous session was inactive
         const isNewSession = !existingRecord || !existingRecord.local_start_time || !existingRecord.mining_isactive;
         if (isNewSession) {
@@ -596,8 +607,16 @@ router.post("/", async (req, res) => {
       if (resolvedLocalStopTime) updateData.local_stop_time = resolvedLocalStopTime;
     }
 
-    if (typeof offset === "number") updateData.offset = offset;
-    if (typeof timezone === "string" && timezone.trim() !== "") updateData.timezone = timezone.trim();
+    // Only real timezones are stored: offsets between UTC-12 and UTC+14 and
+    // IANA names the server recognises.
+    if (typeof offset === "number" && isPlausibleOffset(offset)) updateData.offset = offset;
+    if (isValidTimeZone(timezone)) updateData.timezone = timezone.trim();
+
+    // A start time in the future is a wrong or tampered clock: treat it as now.
+    if (typeof start_time === "number" && start_time > Date.now() + 2 * 60 * 1000) {
+      console.warn(`[ClientTime] user ${user_id}: start_time ${new Date(start_time).toISOString()} is in the future; using now`);
+      start_time = Date.now();
+    }
 
     if (typeof start_time === "number") {
       const now = Date.now();
@@ -767,7 +786,7 @@ router.post('/trading-claim', async (req, res) => {
     const requested = trade.won === true
       ? Math.min(Number(trade.miningGh) || WIN_GH_REWARD_SERVER, MAX_TRADING_WIN_GH)
       : 0;
-    const today = requestDayString({ offset: req.body.offset ?? mining.offset });
+    const today = requestDayString({ offset: req.body.offset, storedOffset: mining.offset }, user_id);
     const out = applyGameBudget({ granted: 0, reason: null, set: {} }, mining, today, requested, MAX_TRADING_WIN_GH);
     Object.assign(mining, out.set);
     const reward = out.granted;

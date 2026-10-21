@@ -66,8 +66,19 @@ const NOW = new Date(Date.now() + 330 * 60 * 1000); // IST
 const TOMORROW = new Date(NOW.getTime() + 86400000), YESTERDAY = new Date(NOW.getTime() - 86400000);
 const D1 = isoDay(NOW), D2 = isoDay(TOMORROW);
 const DAY1 = appDay(NOW, '10:00:00 AM'), DAY2 = appDay(TOMORROW, '09:00:00 AM');
-const post = (body, local_time = DAY1) => request(base).post('/api/user_mining')
-  .send({ offset: -330, timezone: 'Asia/Kolkata', random_ads_watched: 0, local_time, ...body });
+// The server ignores a phone date that is not "today" anywhere on Earth
+// (helpers/clientTime.js), so the next day is simulated by moving the
+// server's clock a day ahead for that request -- as it really happens.
+const realNow = Date.now;
+const post = async (body, local_time = DAY1) => {
+  if (local_time === DAY2) Date.now = () => realNow() + 86400000;
+  try {
+    return await request(base).post('/api/user_mining')
+      .send({ offset: -330, timezone: 'Asia/Kolkata', random_ads_watched: 0, local_time, ...body });
+  } finally {
+    Date.now = realNow;
+  }
+};
 const rec = u => Mining.findOne({ user: u }).lean();
 const claimed = async u => (await rec(u))?.claimedHashpower || 0;
 

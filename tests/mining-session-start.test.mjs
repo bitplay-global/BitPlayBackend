@@ -30,6 +30,9 @@ const TZ = 'Asia/Kolkata', OFF = -330;
 const post = body => request(base).post('/api/user_mining').send({ offset: OFF, timezone: TZ, random_ads_watched: 0, ...body });
 const rec = u => Mining.findOne({ user: u }).lean();
 const todayIst = () => getLocalDateStrAt(Date.now(), TZ, OFF);
+// A real current local time (the server ignores dates that are not today
+// anywhere, so fixed calendar dates would age out of these tests).
+const LOCAL_START = formatLocalStartTime(Date.now() - 60 * 1000, TZ, OFF);
 
 console.log('\n--- helpers ---');
 const stuck = { local_start_time: null, start_time: 1789307714440, timezone: TZ, offset: OFF };
@@ -43,10 +46,10 @@ check('what the server writes, the settlement reads back', getSessionStartDateSt
 
 console.log('\n--- normal activation: stored exactly as the app sent it ---');
 let u = uid(); let now = Date.now();
-await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: '21/09/2026, 10:00:00 AM', rewarded_ads_watched: 0 });
+await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: LOCAL_START, rewarded_ads_watched: 0 });
 let r = await rec(u);
 check('start_time kept', r.start_time === now, `${r.start_time} vs ${now}`);
-check('local_start_time kept', r.local_start_time === '21/09/2026, 10:00:00 AM');
+check('local_start_time kept', r.local_start_time === LOCAL_START);
 
 console.log('\n--- the bug: new session with yesterday\'s start and no local_start_time ---');
 u = uid();
@@ -77,15 +80,15 @@ check('local_start_time derived from it', r.local_start_time === formatLocalStar
 
 console.log('\n--- ad claim during an active session changes no session fields ---');
 u = uid(); now = Date.now();
-await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: '21/09/2026, 10:00:00 AM', rewarded_ads_watched: 0 });
+await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: LOCAL_START, rewarded_ads_watched: 0 });
 await post({ user_id: u, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: null, rewarded_ads_watched: 1 });
 r = await rec(u);
-check('start and local start untouched', r.start_time === now && r.local_start_time === '21/09/2026, 10:00:00 AM');
+check('start and local start untouched', r.start_time === now && r.local_start_time === LOCAL_START);
 check('ad reward still added', r.claimedHashpower === 5.5, `claimed ${r.claimedHashpower}`);
 
 console.log('\n--- ad_cap_reached tells the app apart from a normal 0-reward response ---');
 u = uid(); now = Date.now();
-await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 0 });
+await post({ user_id: u, hashpower: 0, mining_isactive: true, start_time: now, local_start_time: LOCAL_START, rewarded_ads_watched: 0 });
 // The ad count is the server's own (helpers/rewardGrants.js); the app can no
 // longer set it, so the 60 already watched today is put in the record.
 await Mining.updateOne({ user: u }, { $set: { rewarded_ads_watched: 60, adCountDay: todayIst() } });
@@ -93,7 +96,7 @@ let res = await post({ user_id: u, hashpower: 5.5, mining_isactive: true, start_
 check('claim past the cap: ad_cap_reached is true', res.body.ad_cap_reached === true, JSON.stringify(res.body.ad_cap_reached));
 check('and grants nothing', res.body.mining_details.claimedHashpower === 0, res.body.mining_details.claimedHashpower);
 const u2 = uid();
-res = await post({ user_id: u2, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: '25/09/2026, 10:00:00 AM', rewarded_ads_watched: 1 });
+res = await post({ user_id: u2, hashpower: 5.5, mining_isactive: true, start_time: now, local_start_time: LOCAL_START, rewarded_ads_watched: 1 });
 check('ordinary claim under the cap: ad_cap_reached is false', res.body.ad_cap_reached === false, JSON.stringify(res.body.ad_cap_reached));
 
 console.log('\n--- GET /:userId no longer 500s when the client omits local_time ---');

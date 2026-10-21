@@ -2,6 +2,7 @@ import express from 'express';
 import UserMiningDetail from "../../models/UserMiningDetails.js";
 import DailyFreeMiner from "../../models/DailyMiner.js";
 import { computeStreak, toDayString } from "../../helpers/streak.js";
+import { isPlausibleDay, dayFromLocalTime, isPlausibleOffset } from "../../helpers/clientTime.js";
 
 const router = express.Router();
 
@@ -23,16 +24,28 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // Parse DD/MM/YYYY, hh:mm:ss AM/PM (format from formatMiningLocalTimeForApi)
-    const dbParts = local_time.match(/\d+/g);
-    const ampm = /AM|PM/i.exec(local_time)?.[0]?.toUpperCase();
-    let hour = parseInt(dbParts[3], 10);
-    if (ampm === "PM" && hour < 12) hour += 12;
-    if (ampm === "AM" && hour === 12) hour = 0;
-    const day = parseInt(dbParts[0], 10);
-    const month = parseInt(dbParts[1], 10) - 1;
-    const year = parseInt(dbParts[2], 10);
-    const clientLocalTime = new Date(year, month, day, hour, parseInt(dbParts[4]), parseInt(dbParts[5]));
+    // Parse DD/MM/YYYY, hh:mm:ss AM/PM (format from formatMiningLocalTimeForApi).
+    // Used only when its day is possible right now somewhere on Earth; a
+    // future, impossible or malformed time is replaced by the server's clock
+    // in the user's stored timezone offset (helpers/clientTime.js), so a
+    // phone with a wrong clock still claims for the real day.
+    let clientLocalTime;
+    const dbParts = typeof local_time === "string" ? local_time.match(/\d+/g) : null;
+    if (dbParts && dbParts.length >= 6 && isPlausibleDay(dayFromLocalTime(local_time))) {
+      const ampm = /AM|PM/i.exec(local_time)?.[0]?.toUpperCase();
+      let hour = parseInt(dbParts[3], 10);
+      if (ampm === "PM" && hour < 12) hour += 12;
+      if (ampm === "AM" && hour === 12) hour = 0;
+      const day = parseInt(dbParts[0], 10);
+      const month = parseInt(dbParts[1], 10) - 1;
+      const year = parseInt(dbParts[2], 10);
+      clientLocalTime = new Date(year, month, day, hour, parseInt(dbParts[4]), parseInt(dbParts[5]));
+    } else {
+      const off = isPlausibleOffset(miningDetails.offset) ? Number(miningDetails.offset) : 0;
+      const t = new Date(Date.now() - off * 60 * 1000);
+      clientLocalTime = new Date(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), t.getUTCHours(), t.getUTCMinutes(), t.getUTCSeconds());
+      console.warn(`[ClientTime] user ${userId}: ignored implausible local_time "${String(local_time).slice(0, 40)}" for daily claim; using server time`);
+    }
 
     const todayLocal = new Date(clientLocalTime.getFullYear(), clientLocalTime.getMonth(), clientLocalTime.getDate());
 
