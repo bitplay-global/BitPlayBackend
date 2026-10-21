@@ -28,6 +28,7 @@
 import '../config/loadEnv.js';
 import fs from 'fs';
 import mongoose from 'mongoose';
+import { pathToFileURL } from 'url';
 import { findRecoverable, applyRecoverable, matchRefusals, parseNginxRefusals } from '../helpers/recoverPurchases.js';
 
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
@@ -140,7 +141,10 @@ async function main() {
   if (done !== results.length) process.exitCode = 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL: on Windows argv[1] is "D:\..." while import.meta.url is
+// "file:///D:/...", so a plain string compare never matched and the script
+// silently did nothing there.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
     .catch(err => { console.error(`\nError: ${err.message}`); process.exitCode = 1; })
     .finally(() => mongoose.disconnect());
