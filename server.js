@@ -119,7 +119,12 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || process.env.ADMIN_PORT || 3001;
 
-app.listen(PORT, () => {
+// Only reachable through nginx on this machine (HTTPS, real client IP,
+// blocklist). It used to listen on every interface, so http://<ip>:3001
+// bypassed all of that. Set HOST=0.0.0.0 only if that is really wanted.
+const HOST = process.env.HOST || "127.0.0.1";
+
+app.listen(PORT, HOST, () => {
   console.log(`Admin Panel running on port ${PORT}`);
   connectBTCWatcher().catch(err => console.error("BTC watcher fail:", err));
 });
