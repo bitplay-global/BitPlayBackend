@@ -140,7 +140,7 @@
         }
 
         /* ── helpers ────────────────────────────────────────────────────── */
-        function badge(color, text) { return `<span class="badge bg-${color}">${text}</span>`; }
+        function badge(color, text) { return `<span class="badge bg-${color}">${esc(text)}</span>`; }
         function fmtDate(ts) { return ts ? new Date(ts).toLocaleString() : '-'; }
         function fmtPrice(n) { return n != null ? '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'; }
         function fmtCrypto(n) { return n != null ? Number(n).toFixed(18) : '-'; }
@@ -153,46 +153,46 @@
 
           if (state.tab === 'streak') {
             const d = rec.streakDays || 0;
-            return `<tr><td>${n}</td><td>${name}</td><td>${email}</td>
-        <td>${d} days</td>
-        <td>${rec.streakLastDate || '-'}</td>
-        <td class="text-nowrap">${rec.updatedAt ? new Date(rec.updatedAt).toLocaleDateString() : '-'}</td></tr>`;
+            return `<tr><td>${n}</td><td>${esc(name)}</td><td>${esc(email)}</td>
+        <td>${esc(d)} days</td>
+        <td>${esc(rec.streakLastDate || '-')}</td>
+        <td class="text-nowrap">${esc(rec.updatedAt ? new Date(rec.updatedAt).toLocaleDateString() : '-')}</td></tr>`;
           }
 
           if (state.tab === 'game' && state.gameType === 'trading') {
-            return `<tr><td>${n}</td><td>${name}</td><td>${email}</td>
+            return `<tr><td>${n}</td><td>${esc(name)}</td><td>${esc(email)}</td>
         <td>${rec.direction === 'up' ? badge('success', '▲ Up') : badge('danger', '▼ Down')}</td>
-        <td>${rec.durationLabel || '-'}</td>
-        <td class="text-nowrap">${fmtPrice(rec.entryPrice)}</td>
-        <td class="text-nowrap">${fmtPrice(rec.exitPrice)}</td>
+        <td>${esc(rec.durationLabel || '-')}</td>
+        <td class="text-nowrap">${esc(fmtPrice(rec.entryPrice))}</td>
+        <td class="text-nowrap">${esc(fmtPrice(rec.exitPrice))}</td>
         <td>${rec.won ? badge('success', 'Won') : badge('danger', 'Lost')}</td>
-        <td>${rec.miningGh || 0} Gh</td>
+        <td>${esc(rec.miningGh || 0)} Gh</td>
         <td>${rec.claimed ? badge('success', 'Claimed') : badge('secondary', 'Pending')}</td>
-        <td class="text-nowrap">${fmtDate(rec.earnedAt)}</td></tr>`;
+        <td class="text-nowrap">${esc(fmtDate(rec.earnedAt))}</td></tr>`;
           }
 
           if (state.tab === 'game' && state.gameType === 'spin') {
             const st = rec.status === 'claimed' ? badge('success', 'claimed') : rec.status === 'won_pending' ? badge('warning', 'pending') : badge('danger', rec.status || '-');
-            return `<tr><td>${n}</td><td>${name}</td><td>${email}</td>
-        <td>${rec.label || '-'}</td><td>${rec.gh || 0} Gh</td>
+            return `<tr><td>${n}</td><td>${esc(name)}</td><td>${esc(email)}</td>
+        <td>${esc(rec.label || '-')}</td><td>${esc(rec.gh || 0)} Gh</td>
         <td>${rec.status === 'lose' ? badge('danger', 'Lost') : badge('success', 'Won')}</td>
         <td>${st}</td>
-        <td class="text-nowrap">${fmtDate(rec.ts)}</td></tr>`;
+        <td class="text-nowrap">${esc(fmtDate(rec.ts))}</td></tr>`;
           }
 
           if (state.tab === 'game' && state.gameType === 'memory') {
             const st = rec.status === 'claimed' ? badge('success', 'claimed') : rec.status === 'won_pending' ? badge('warning', 'pending') : badge('danger', rec.status || '-');
-            return `<tr><td>${n}</td><td>${name}</td><td>${email}</td>
-        <td>${rec.durationSec || 0}s</td><td>${rec.gh || 0} Gh</td>
+            return `<tr><td>${n}</td><td>${esc(name)}</td><td>${esc(email)}</td>
+        <td>${esc(rec.durationSec || 0)}s</td><td>${esc(rec.gh || 0)} Gh</td>
         <td>${rec.won ? badge('success', 'Won') : badge('danger', 'Lost')}</td>
         <td>${st}</td>
-        <td class="text-nowrap">${fmtDate(rec.ts)}</td></tr>`;
+        <td class="text-nowrap">${esc(fmtDate(rec.ts))}</td></tr>`;
           }
 
           if (state.tab === 'mining') {
-            return `<tr><td>${n}</td><td>${name}</td><td>${email}</td>
-        <td class="text-nowrap">${fmtDate(rec.date)}</td>
-        <td>${fmtCrypto(rec.BTC)}</td>
+            return `<tr><td>${n}</td><td>${esc(name)}</td><td>${esc(email)}</td>
+        <td class="text-nowrap">${esc(fmtDate(rec.date))}</td>
+        <td>${esc(fmtCrypto(rec.BTC))}</td>
       </tr>`;
           }
           return '';
@@ -217,13 +217,13 @@
             return;
           }
 
-          const ths = COLS[colKey()].map(c => `<th>${c}</th>`).join('');
+          const ths = COLS[colKey()].map(c => `<th>${esc(c)}</th>`).join('');
           const trs = data.records.map((r, i) => buildRow(r, i)).join('');
 
           wrap.innerHTML = `
       <table class="table table-dark table-striped table-hover table-bordered align-middle" id="histTable">
-        <thead><tr>${ths}</tr></thead>
-        <tbody>${trs}</tbody>
+        <thead><tr>${esc(ths)}</tr></thead>
+        <tbody>${esc(trs)}</tbody>
       </table>`;
 
           document.getElementById('histCount').textContent = `Page ${data.page}`;
@@ -273,7 +273,7 @@
             renderTable(await res.json());
           } catch (err) {
             document.getElementById('histTableWrap').innerHTML =
-              `<div class="hist-empty text-danger"><i class="fas fa-exclamation-triangle me-1"></i>Failed to load: ${err.message}</div>`;
+              `<div class="hist-empty text-danger"><i class="fas fa-exclamation-triangle me-1"></i>Failed to load: ${esc(err.message)}</div>`;
           }
         }
 

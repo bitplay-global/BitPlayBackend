@@ -161,10 +161,10 @@
 
                         row.innerHTML = `
                             <td>${index + 1}</td>
-                            <td>${ticket.name}</td>
-                            <td>${ticket.email}</td>
-                            <td>${ticket.message}</td>
-                            <td>${ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : 'N/A'}</td>
+                            <td>${esc(ticket.name)}</td>
+                            <td>${esc(ticket.email)}</td>
+                            <td>${esc(ticket.message)}</td>
+                            <td>${esc(ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : 'N/A')}</td>
                             <td class="text-center">
                                 <span class="icon-box text-primary me-1 email-btn" role="button" title="Email">
                                     <i class="fas fa-envelope"></i>

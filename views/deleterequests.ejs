@@ -88,9 +88,9 @@
                         row.setAttribute('data-id', reqItem._id);
                         row.innerHTML = `
                             <td>${index + 1}</td>
-                            <td>${reqItem.user ? reqItem.user.email : 'N/A'}</td>
-                            <td>${reqItem.reason}</td>
-                            <td>${new Date(reqItem.createdAt).toLocaleString()}</td>
+                            <td>${esc(reqItem.user ? reqItem.user.email : 'N/A')}</td>
+                            <td>${esc(reqItem.reason)}</td>
+                            <td>${esc(new Date(reqItem.createdAt).toLocaleString())}</td>
                         `;
                         requestsTbody.appendChild(row);
                     });

@@ -158,15 +158,15 @@
                         row.setAttribute('data-id', p._id);
                         row.innerHTML = `
                             <td>${index + 1}</td>
-                            <td>${p.userName}</td>
-                            <td>${p.userEmail}</td>
-                            <td>${p.planName}</td>
-                            <td>${p.hashrate}</td>
-                            <td>${p.product_identifier}</td>
-                            <td>${priceStr}</td>
-                            <td>${dateStr}</td>
-                            <td>${p.status}</td>
-                            <td>${p.existing_hashpower != null ? p.existing_hashpower : '-'} → ${p.updated_hashpower != null ? p.updated_hashpower : '-'}</td>
+                            <td>${esc(p.userName)}</td>
+                            <td>${esc(p.userEmail)}</td>
+                            <td>${esc(p.planName)}</td>
+                            <td>${esc(p.hashrate)}</td>
+                            <td>${esc(p.product_identifier)}</td>
+                            <td>${esc(priceStr)}</td>
+                            <td>${esc(dateStr)}</td>
+                            <td>${esc(p.status)}</td>
+                            <td>${esc(p.existing_hashpower != null ? p.existing_hashpower : '-')} → ${esc(p.updated_hashpower != null ? p.updated_hashpower : '-')}</td>
                         `;
                         purchasesTbody.appendChild(row);
                     });

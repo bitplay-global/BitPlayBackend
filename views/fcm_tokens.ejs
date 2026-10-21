@@ -63,10 +63,10 @@
                 <td><%= row.user_id %></td>
                 <td style="max-width:400px; word-break:break-all;"><%= row.token %></td>
                 <td>
-                  <button class="btn btn-sm btn-outline-primary" onclick="openSendModal('<%= row.user_id %>')">
+                  <button class="btn btn-sm btn-outline-primary" data-uid="<%= row.user_id %>" onclick="openSendModal(this.dataset.uid)">
                     <i class="fas fa-paper-plane"></i> Send
                   </button>
-                  <button class="btn btn-sm btn-outline-danger" onclick="deleteToken('<%= row._id %>')">
+                  <button class="btn btn-sm btn-outline-danger" data-id="<%= row._id %>" onclick="deleteToken(this.dataset.id)">
                     <i class="fas fa-trash"></i> Delete
                   </button>
                 </td>
@@ -148,13 +148,13 @@
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td>${index + 1}</td>
-            <td>${row.user_id}</td>
-            <td style="max-width:400px; word-break:break-all;">${row.token}</td>
+            <td>${esc(row.user_id)}</td>
+            <td style="max-width:400px; word-break:break-all;">${esc(row.token)}</td>
             <td>
-              <button class="btn btn-sm btn-outline-primary" onclick="openSendModal('${row.user_id}')">
+              <button class="btn btn-sm btn-outline-primary" data-uid="${esc(row.user_id)}" onclick="openSendModal(this.dataset.uid)">
                 <i class="fas fa-paper-plane"></i> Send
               </button>
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteToken('${row._id}')">
+              <button class="btn btn-sm btn-outline-danger" data-id="${esc(row._id)}" onclick="deleteToken(this.dataset.id)">
                 <i class="fas fa-trash"></i> Delete
               </button>
             </td>

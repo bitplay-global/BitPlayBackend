@@ -220,27 +220,27 @@
                 const totalReferralRewards = (user.totalReferralRewards != null ? Number(user.totalReferralRewards) : 0).toFixed(16);
                 row.innerHTML = `
                     <td>${index + 1}</td>
-                    <td>${user.name}</td>
-                    <td>${user.email}</td>
-                    <td>${user.emailVerified ? 'Yes' : 'No'}</td>
-                    <td><span class="badge bg-${statusColor}">${statusDisplay}</span></td>
-                    <td class="amount-cell">${totalBtc}</td>
-                    <td>${referralCount}</td>
-                    <td class="amount-cell">${totalReferralRewards}</td>
-                    <td>${new Date(user.createdAt).toLocaleDateString()}</td>
+                    <td>${esc(user.name)}</td>
+                    <td>${esc(user.email)}</td>
+                    <td>${esc(user.emailVerified ? 'Yes' : 'No')}</td>
+                    <td><span class="badge bg-${esc(statusColor)}">${esc(statusDisplay)}</span></td>
+                    <td class="amount-cell">${esc(totalBtc)}</td>
+                    <td>${esc(referralCount)}</td>
+                    <td class="amount-cell">${esc(totalReferralRewards)}</td>
+                    <td>${esc(new Date(user.createdAt).toLocaleDateString())}</td>
                     <td>
                         <div class="dropdown">
-                            <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" onclick="toggleDropdown(this)" id="dropdownMenuButton${index}">
+                            <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" onclick="toggleDropdown(this)" id="dropdownMenuButton${esc(index)}">
                                 <i class="fas fa-cog"></i>
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-dark" id="dropdownMenu${index}" style="display: none;">
-                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${user._id}', 'active')">
+                            <ul class="dropdown-menu dropdown-menu-dark" id="dropdownMenu${esc(index)}" style="display: none;">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${esc(user._id)}', 'active')">
                                     <i class="fas fa-check text-success me-2"></i>Set Active
                                 </a></li>
-                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${user._id}', 'inactive')">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${esc(user._id)}', 'inactive')">
                                     <i class="fas fa-pause text-warning me-2"></i>Set Inactive
                                 </a></li>
-                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${user._id}', 'suspended')">
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="changeUserStatus('${esc(user._id)}', 'suspended')">
                                     <i class="fas fa-ban text-danger me-2"></i>Suspend
                                 </a></li>
                             </ul>
@@ -344,8 +344,8 @@
             const iconClass = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
 
             const alertHtml = `
-                <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
-                    <i class="fas ${iconClass} me-2"></i>
+                <div class="alert ${esc(alertClass)} alert-dismissible fade show" role="alert">
+                    <i class="fas ${esc(iconClass)} me-2"></i>
                     ${message}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>

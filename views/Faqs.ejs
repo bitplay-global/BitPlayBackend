@@ -96,10 +96,10 @@
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${index + 1}</td>
-        <td>${faq.name}</td>
-        <td>${faq.message}</td>
-        <td>${new Date(faq.date_created).toLocaleDateString()}</td>
-        <td><button class="btn btn-sm btn-danger delete-faq-btn" data-id="${faq._id}">🗑</button></td>
+        <td>${esc(faq.name)}</td>
+        <td>${esc(faq.message)}</td>
+        <td>${esc(new Date(faq.date_created).toLocaleDateString())}</td>
+        <td><button class="btn btn-sm btn-danger delete-faq-btn" data-id="${esc(faq._id)}">🗑</button></td>
       `;
       faqsTbody.appendChild(row);
     });

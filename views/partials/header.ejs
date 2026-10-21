@@ -14,6 +14,16 @@
   />
   <link href="/css/dashboard.css" rel="stylesheet" />
   <script>
+    // Escape text before it goes into innerHTML. Names, emails, ticket text,
+    // game labels and token ids come from users; without this, a value like
+    // <img src=x onerror=...> ran as the admin (stored XSS, audit 2026-10-21).
+    window.esc = function (v) {
+      return String(v == null ? '' : v).replace(/[&<>"'`]/g, function (ch) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' }[ch];
+      });
+    };
+  </script>
+  <script>
     // Expired admin login: any same-origin request answered with 401 means the
     // session is gone (for example after a server restart). Go to the login
     // page, which brings the admin back here afterwards, instead of letting

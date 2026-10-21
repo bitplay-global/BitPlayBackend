@@ -112,17 +112,17 @@
                         row.setAttribute('data-id', sub._id);
                         row.innerHTML = `
                             <td>${index + 1}</td>
-                            <td>${userName}</td>
-                            <td>${userEmail}</td>
-                            <td>${sub.crypto || '-'}</td>
-                            <td>${sub.chain || '-'}</td>
-                            <td>${amountStr}</td>
-                            <td>${amountCrypto}</td>
-                            <td>${sub.paid ? 'Yes' : 'No'}</td>
-                            <td>${planName}</td>
-                            <td>${hashrateStr}</td>
-                            <td>${durationStr}</td>
-                            <td>${planCostStr}</td>
+                            <td>${esc(userName)}</td>
+                            <td>${esc(userEmail)}</td>
+                            <td>${esc(sub.crypto || '-')}</td>
+                            <td>${esc(sub.chain || '-')}</td>
+                            <td>${esc(amountStr)}</td>
+                            <td>${esc(amountCrypto)}</td>
+                            <td>${esc(sub.paid ? 'Yes' : 'No')}</td>
+                            <td>${esc(planName)}</td>
+                            <td>${esc(hashrateStr)}</td>
+                            <td>${esc(durationStr)}</td>
+                            <td>${esc(planCostStr)}</td>
                         `;
                         subscriptionsTbody.appendChild(row);
                     });

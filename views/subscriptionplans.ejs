@@ -166,14 +166,14 @@
                         row.setAttribute('data-id', plan.id);
                         row.innerHTML = `
                             <td>${index + 1}</td>
-                            <td>${plan.name}</td>
-                            <td>${plan.hashrate}</td>
-                            <td>${plan.unit}</td>
-                            <td>${plan.duration}</td>
-                            <td>$${plan.maintenance_cost}</td>
-                            <td>$${plan.plan_cost}</td>
-                            <td>${plan.apple_identifier || ''}</td>
-                            <td>${plan.google_identifier || ''}</td>
+                            <td>${esc(plan.name)}</td>
+                            <td>${esc(plan.hashrate)}</td>
+                            <td>${esc(plan.unit)}</td>
+                            <td>${esc(plan.duration)}</td>
+                            <td>$${esc(plan.maintenance_cost)}</td>
+                            <td>$${esc(plan.plan_cost)}</td>
+                            <td>${esc(plan.apple_identifier || '')}</td>
+                            <td>${esc(plan.google_identifier || '')}</td>
                             <td>
                                 <button class="btn btn-danger btn-sm delete-plan-btn">Delete</button>
                             </td>
