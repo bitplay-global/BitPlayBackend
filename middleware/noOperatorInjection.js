@@ -14,6 +14,8 @@
  *  - no key anywhere in the query or body may start with "$".
  * Everything else passes untouched.
  */
+import { recordStrike, requestUserId } from "../helpers/abuseGuard.js";
+
 const MAX_DEPTH = 20;
 
 function hasOperatorKey(value, depth = 0) {
@@ -39,6 +41,10 @@ function hasNestedQueryObject(query) {
 export function noOperatorInjection(req, res, next) {
   if (hasNestedQueryObject(req.query) || hasOperatorKey(req.query) || hasOperatorKey(req.body)) {
     console.warn(`[Security] refused operator injection: ${req.method} ${req.originalUrl.slice(0, 200)} from ${req.ip}`);
+    if (!req.session?.isLoggedIn) {
+      const userId = requestUserId(req);
+      if (userId) recordStrike(userId, "injection", `${req.method} ${req.originalUrl.slice(0, 120)}`);
+    }
     return res.status(400).json({ success: false, error: "Invalid request." });
   }
   next();

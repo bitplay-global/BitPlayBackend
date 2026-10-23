@@ -9,6 +9,8 @@
  * Single-process memory: fine for one server behind nginx. If the service is
  * ever scaled out, move this to a shared store.
  */
+import { recordStrike } from "../helpers/abuseGuard.js";
+
 const buckets = new Map();
 
 // Drop expired windows periodically so memory stays bounded.
@@ -33,6 +35,9 @@ export function rateLimit({ name, windowMs, max }) {
       const retryAfter = Math.ceil((b.start + windowMs - now) / 1000);
       res.set('Retry-After', String(retryAfter));
       console.warn(`[RateLimit] ${name} exceeded by ${who}`);
+      // A person tapping hits this a few times; a script hits it thousands
+      // of times. Enough of these in an hour suspends the account.
+      if (req.authUserId) recordStrike(req.authUserId, "rate_limit", `${name} ${req.method} ${req.originalUrl.slice(0, 80)}`);
       return res.status(429).json({ success: false, code: 'RATE_LIMITED', message: 'Too many requests. Please try again shortly.' });
     }
     return next();

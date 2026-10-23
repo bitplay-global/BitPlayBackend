@@ -1,6 +1,7 @@
 import express from 'express';
 import { appUserAuth } from '../middleware/appUserAuth.js';
 import { appVersionTracker } from '../middleware/appVersionTracker.js';
+import { suspendedUserGuard } from '../helpers/abuseGuard.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
@@ -40,6 +41,9 @@ const router = express.Router();
 // Every /api request passes through here first: a valid app token becomes the
 // only user the request may act as. See middleware/appUserAuth.js.
 router.use(appUserAuth);
+// Suspended accounts get nothing; HTML/script in text fields is refused and
+// counts against the account (helpers/abuseGuard.js).
+router.use(suspendedUserGuard);
 // Records each user's app version and last-seen time (see the middleware).
 router.use(appVersionTracker);
 
