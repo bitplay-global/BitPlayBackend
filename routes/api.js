@@ -1,5 +1,6 @@
 import express from 'express';
 import { appUserAuth } from '../middleware/appUserAuth.js';
+import { appVersionTracker } from '../middleware/appVersionTracker.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
@@ -39,6 +40,8 @@ const router = express.Router();
 // Every /api request passes through here first: a valid app token becomes the
 // only user the request may act as. See middleware/appUserAuth.js.
 router.use(appUserAuth);
+// Records each user's app version and last-seen time (see the middleware).
+router.use(appVersionTracker);
 
 // Rate limits for abusable endpoints (per verified user, else per IP). Generous
 // on purpose: many mobile users can share one carrier IP. See middleware/rateLimit.js.
