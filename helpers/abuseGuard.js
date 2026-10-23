@@ -133,9 +133,14 @@ export function findXss(value, depth = 0, path = "") {
  * Express middleware for /api: refuses suspended accounts, and refuses (and
  * strikes) requests whose text fields carry HTML/script.
  */
-export function suspendedUserGuard(req, res, next) {
+export async function suspendedUserGuard(req, res, next) {
   if (req.session?.isLoggedIn) return next(); // admin dashboard
   const userId = requestUserId(req);
+  // Until the first load completes the cache is empty, which would let a
+  // suspended account through right after a restart: wait for it once.
+  if (userId && cacheAt === 0 && mongoose.connection.readyState === 1) {
+    try { await (refreshing || (refreshing = refreshSuspendedCache().finally(() => { refreshing = null; }))); } catch { /* fall through */ }
+  }
   if (userId && isSuspended(userId)) {
     return res.status(403).json({ success: false, code: "ACCOUNT_SUSPENDED", message: "This account has been suspended. Please contact support." });
   }
