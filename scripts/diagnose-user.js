@@ -6,7 +6,8 @@
  *   node scripts/diagnose-user.js --email someone@example.com --since 2026-09-10
  *   node scripts/diagnose-user.js --user <userId> --since 2026-09-10
  *
- * Prints the account's status, mining record, streak, recent mining sessions
+ * Prints the account's status, mining record, streak, pack purchases (with
+ * RevenueCat's view of each subscription), recent mining sessions
  * and daily-reward claims, and -- from the nginx access logs -- every request
  * the user's app made and what the server answered, grouped by day. Failed
  * answers (4xx/5xx) are listed individually: they are usually the cause.
@@ -119,6 +120,31 @@ async function main() {
   for (const c of ['dailyrewardclaims', 'dailyrewardclaimhistories']) {
     const rows = await db.collection(c).find({ userId, claimedAt: { $gte: args.since } }).sort({ claimedAt: -1 }).limit(20).toArray();
     console.log(`  ${c}: ${rows.length ? rows.map(r => iso(r.claimedAt)).join(', ') : '(none)'}`);
+  }
+
+  console.log('\n=== PACK PURCHASES (all time)');
+  const purchases = await db.collection('purchases').find({ user: new mongoose.Types.ObjectId(userId) }).sort({ purchase_date: 1 }).toArray();
+  if (!purchases.length) console.log('  (none recorded -- if they paid, see scripts/recover-purchases.js)');
+  for (const p of purchases) console.log(`  ${iso(p.purchase_date)} | ${p.product_identifier} | ${p.price_paid} ${p.currency} | ${p.status} | hashpower ${p.existing_hashpower} -> ${p.updated_hashpower} | RC ${p.revenuecat_customer_id || '-'}`);
+  for (const g of await db.collection('subscriptiongrants').find({ user: new mongoose.Types.ObjectId(userId) }).toArray()) {
+    console.log(`  renewal tracking: ${g.product_identifier} | ${g.hashpower} GH/s | ${g.legacy ? 'bought before 2026-10-26' : 'new'} | ${g.active ? 'ON' : 'off'} until ${iso(g.expires_at)}`);
+  }
+  for (const g of await db.collection('bonusgrants').find({ user: new mongoose.Types.ObjectId(userId) }).toArray()) {
+    console.log(`  credit: ${g.hashpower} GH/s ${iso(g.starts_at)} -> ${iso(g.expires_at)} | ${g.active ? 'ON' : 'ended'} | ${g.reason}`);
+  }
+  const rcIds = [...new Set(purchases.map(p => p.revenuecat_customer_id).filter(Boolean))];
+  if (rcIds.length && process.env.REVENUECAT_SECRET_KEY) {
+    const { getSubscriber } = await import('../helpers/revenueCatVerify.js');
+    for (const id of rcIds) {
+      try {
+        const sub = await getSubscriber(id);
+        for (const [key, e] of Object.entries(sub?.subscriptions || {})) {
+          console.log(`  RevenueCat ${key}: ${e.store}${e.is_sandbox ? ' SANDBOX' : ''} | first ${iso(e.original_purchase_date)} | latest charge ${iso(e.purchase_date)} | paid until ${iso(e.expires_date)}` +
+            `${e.unsubscribe_detected_at ? ` | cancelled ${iso(e.unsubscribe_detected_at)}` : ''}${e.billing_issues_detected_at ? ` | billing issue ${iso(e.billing_issues_detected_at)}` : ''}${e.refunded_at ? ` | REFUNDED ${iso(e.refunded_at)}` : ''}`);
+        }
+        for (const [key, list] of Object.entries(sub?.non_subscriptions || {})) for (const t of list) console.log(`  RevenueCat one-off ${key}: ${iso(t.purchase_date)}${t.is_sandbox ? ' SANDBOX' : ''}`);
+      } catch (err) { console.log(`  RevenueCat ${id}: could not read (${err.code || err.message})`); }
+    }
   }
 
   console.log(`\n=== WHAT THE APP ASKED AND WHAT THE SERVER ANSWERED (nginx, since ${iso(args.since)})`);
