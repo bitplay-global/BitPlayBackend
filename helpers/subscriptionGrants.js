@@ -72,7 +72,7 @@ export function shouldBeActive(grant, entry, now = new Date(), legacySince = nul
   return !original || started.getTime() - original.getTime() > DAY_MS;
 }
 
-async function addHashpower(userId, delta, session) {
+export async function addHashpower(userId, delta, session) {
   // Never below zero, whatever happened to the row in between.
   const r = await UserMiningDetail.collection.updateOne(
     { user: String(userId) }, // stored as a string in userminings

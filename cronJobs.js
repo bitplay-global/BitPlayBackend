@@ -26,6 +26,7 @@ import {
   settlementAmount,
 } from "./helpers/miningDaySettlement.js";
 import { reconcileSubscriptions } from "./helpers/subscriptionGrants.js";
+import { expireBonusGrants } from "./helpers/bonusGrants.js";
 
 console.log("Cron Job Started!!");
 
@@ -311,6 +312,15 @@ cron.schedule("20 * * * *", async () => {
     await reconcileSubscriptions({ scope: "due" });
   } catch (err) {
     console.error("Error in subscription expiry cron job:", err);
+  }
+});
+// Hourly: time-limited hashpower (helpers/bonusGrants.js) whose time is up.
+cron.schedule("25 * * * *", async () => {
+  try {
+    await ensureMongoConnected();
+    await expireBonusGrants();
+  } catch (err) {
+    console.error("Error in bonus expiry cron job:", err);
   }
 });
 // Every 6 hours: every buyer, which is how a renewal of a pack bought before
