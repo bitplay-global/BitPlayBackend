@@ -3,7 +3,7 @@
  *
  * The packs are sold as auto-renewing subscriptions in Google Play and the App
  * Store, but until 2026-10-26 the backend granted a pack's hashpower once and
- * ignored every renewal: 29 buyers were charged again (about 48 renewals) and
+ * ignored every renewal: 27 buyers were charged again (about 36 renewals) and
  * received nothing for it. From then on:
  *
  *  - a new pack purchase gives its hashpower while the subscription is paid,
