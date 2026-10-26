@@ -7,10 +7,16 @@
  *
  * The unique index on store_transaction_id is the final guard against applying
  * one store transaction twice: a duplicate aborts the whole transaction.
+ *
+ * A subscription purchase also gets a SubscriptionGrant, so its hashpower lasts
+ * as long as the subscription is paid (helpers/subscriptionGrants.js). Its
+ * unique (customer, subscription) index means a second purchase report for a
+ * subscription already tracked aborts here too; callers sync it instead.
  */
 import mongoose from 'mongoose';
 import Purchase from '../models/Purchase.js';
 import UserMiningDetail from '../models/UserMiningDetails.js';
+import SubscriptionGrant from '../models/SubscriptionGrant.js';
 
 // Bonus percentage per plan, on top of the 2x base. A plan's own bonus_percent
 // wins when set; this map covers plans created before that field existed.
@@ -66,6 +72,26 @@ export async function grantPlanPurchase({
 
     await purchase.save({ session });
     console.log('Purchase saved:', purchase._id);
+
+    if (verified.kind === 'subscription' && verified.rcKey && revenuecatCustomerId) {
+      const e = verified.entry || {};
+      const ends = [e.expires_date, e.grace_period_expires_date].filter(Boolean).map(d => new Date(d).getTime());
+      const expiresAt = ends.length ? new Date(Math.max(...ends)) : null;
+      await SubscriptionGrant.create([{
+        user: userId,
+        plan_id: plan._id,
+        product_identifier: productIdentifier,
+        rc_customer_id: revenuecatCustomerId,
+        rc_key: verified.rcKey,
+        purchase_id: purchase._id,
+        hashpower: hashpowerToAdd,
+        legacy: false,
+        active: true,
+        expires_at: expiresAt,
+        period_purchase_date: verified.purchasedAt,
+        history: [{ change: 'on', hashpower: hashpowerToAdd, purchase_date: verified.purchasedAt, expires_at: expiresAt, reason: 'purchased' }],
+      }], { session });
+    }
 
     if (!userMining) {
       userMining = new UserMiningDetail({

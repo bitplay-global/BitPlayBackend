@@ -4,6 +4,8 @@ import SubscriptionPlan from '../../models/SubscriptionPlan.js';
 import { verifyStorePurchase } from '../../helpers/revenueCatVerify.js';
 import { grantPlanPurchase } from '../../helpers/grantPlanPurchase.js';
 import { matchPlanProduct } from '../../helpers/matchPlanProduct.js';
+import SubscriptionGrant from '../../models/SubscriptionGrant.js';
+import { syncCustomer } from '../../helpers/subscriptionGrants.js';
 
 const router = express.Router();
 
@@ -62,6 +64,19 @@ router.post('/:userId', async (req, res) => {
 
     // One store transaction grants hashpower once, however often it is replayed.
     if (await Purchase.findOne({ store_transaction_id: verified.transactionId }).lean()) {
+      return res.status(409).json({
+        success: false,
+        message: 'This purchase has already been applied.',
+        code: 'TRANSACTION_ALREADY_USED'
+      });
+    }
+
+    // A renewal or re-subscription of a subscription already tracked: its
+    // period is brought up to date instead of granting the pack a second time.
+    if (verified.kind === 'subscription' && revenuecat_customer_id &&
+        await SubscriptionGrant.exists({ rc_customer_id: revenuecat_customer_id, rc_key: verified.rcKey })) {
+      await syncCustomer(revenuecat_customer_id).catch(err =>
+        console.warn(`[Purchases] subscription sync failed for ${userId}: ${err.code || err.message}`));
       return res.status(409).json({
         success: false,
         message: 'This purchase has already been applied.',

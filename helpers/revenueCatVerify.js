@@ -158,7 +158,7 @@ export async function verifyNonSubscriptionPurchase({ appUserId, productIdentifi
  *
  * Refunded and (in production) sandbox transactions are refused.
  *
- * @returns {Promise<{transactionId: string, purchasedAt: Date, store: string, kind: 'subscription'|'non_subscription'}>}
+ * @returns {Promise<{transactionId: string, purchasedAt: Date, store: string, kind: 'subscription'|'non_subscription', rcKey: string|null, entry: object|null}>}
  */
 export async function verifyStorePurchase({ appUserId, productIdentifier }) {
   const subscriber = await fetchSubscriber(appUserId, productIdentifier);
@@ -174,7 +174,7 @@ export async function verifyStorePurchase({ appUserId, productIdentifier }) {
   for (const [key, t] of Object.entries(subs)) {
     const whole = key === productIdentifier;
     const split = key === sku && (!basePlan || !t.product_plan_identifier || t.product_plan_identifier === basePlan);
-    if (whole || split) candidates.push({ ...t, kind: 'subscription' });
+    if (whole || split) candidates.push({ ...t, kind: 'subscription', key });
   }
 
   if (candidates.length === 0) {
@@ -203,6 +203,10 @@ export async function verifyStorePurchase({ appUserId, productIdentifier }) {
     purchasedAt: latest.purchase_date ? new Date(latest.purchase_date) : new Date(),
     store: latest.store || 'unknown',
     kind: latest.kind,
+    // Subscriptions only: which entry it is and when its paid period ends
+    // (helpers/subscriptionGrants.js turns the hashpower off then).
+    rcKey: latest.kind === 'subscription' ? latest.key : null,
+    entry: latest.kind === 'subscription' ? latest : null,
   };
 }
 

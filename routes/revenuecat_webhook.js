@@ -5,12 +5,19 @@ import SubscriptionPlan from '../models/SubscriptionPlan.js';
 import { verifyStorePurchase } from '../helpers/revenueCatVerify.js';
 import { grantPlanPurchase } from '../helpers/grantPlanPurchase.js';
 import { matchPlanProduct } from '../helpers/matchPlanProduct.js';
+import SubscriptionGrant from '../models/SubscriptionGrant.js';
+import { syncCustomer } from '../helpers/subscriptionGrants.js';
 
 const router = express.Router();
 
-// Renewals are deliberately not handled: the app's own flow grants hashpower
-// once per purchase, and this must not change what a purchase is worth.
 const HANDLED_TYPES = new Set(['INITIAL_PURCHASE', 'NON_RENEWING_PURCHASE']);
+// Events that change a subscription's paid period: the customer is re-read
+// from RevenueCat and its pack hashpower turned on/off to match
+// (helpers/subscriptionGrants.js; cronJobs.js also does this on a timer).
+const SYNC_TYPES = new Set([
+  'RENEWAL', 'EXPIRATION', 'CANCELLATION', 'UNCANCELLATION', 'BILLING_ISSUE',
+  'PRODUCT_CHANGE', 'SUBSCRIPTION_PAUSED', 'SUBSCRIPTION_EXTENDED', 'REFUND_REVERSED',
+]);
 const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 // Verification failures that are final: RevenueCat retrying would change nothing.
 const FINAL_REFUSALS = new Set(['VERIFICATION_REFUNDED', 'VERIFICATION_SANDBOX_PURCHASE']);
@@ -72,6 +79,22 @@ router.post('/', async (req, res) => {
   if (!event || !event.type) {
     return res.status(400).json({ success: false, message: 'Missing event' });
   }
+  if (SYNC_TYPES.has(event.type)) {
+    const ids = [...new Set([event.original_app_user_id, event.app_user_id,
+      ...(Array.isArray(event.aliases) ? event.aliases : [])].filter(id => typeof id === 'string' && id))];
+    try {
+      let synced = 0;
+      for (const id of ids) {
+        if (!(await Purchase.exists({ revenuecat_customer_id: id }))) continue;
+        await syncCustomer(id);
+        synced += 1;
+      }
+      return res.status(200).json({ success: true, synced });
+    } catch (err) {
+      console.warn(`[RevenueCat webhook] Could not sync ${event.type} for ${ids.join(',')}: ${err.code || err.message}`);
+      return res.status(500).json({ success: false, message: 'Sync failed' });
+    }
+  }
   if (!HANDLED_TYPES.has(event.type)) {
     return res.status(200).json({ success: true, ignored: event.type });
   }
@@ -108,6 +131,11 @@ router.post('/', async (req, res) => {
 
     if (await Purchase.findOne({ store_transaction_id: verified.transactionId }).lean()) {
       return res.status(200).json({ success: true, duplicate: true });
+    }
+    const rcId = event.original_app_user_id || event.app_user_id;
+    if (verified.kind === 'subscription' && await SubscriptionGrant.exists({ rc_customer_id: rcId, rc_key: verified.rcKey })) {
+      await syncCustomer(rcId);
+      return res.status(200).json({ success: true, duplicate: true, synced: 1 });
     }
 
     const hasLocalPrice = event.price_in_purchased_currency != null && event.currency;

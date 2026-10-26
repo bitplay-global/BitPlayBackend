@@ -25,6 +25,7 @@ import {
   computeMinedBtcOnDayRollover,
   settlementAmount,
 } from "./helpers/miningDaySettlement.js";
+import { reconcileSubscriptions } from "./helpers/subscriptionGrants.js";
 
 console.log("Cron Job Started!!");
 
@@ -298,6 +299,28 @@ cron.schedule("0 * * * *", async () => {
 
   } catch (err) {
     console.error("Error in expiry warning cron job:", err);
+  }
+});
+
+// Monthly pack subscriptions (helpers/subscriptionGrants.js). The RevenueCat
+// webhook applies changes as they happen; these catch anything it missed.
+// Hourly: packs whose paid period has ended -- renewed (kept) or not (removed).
+cron.schedule("20 * * * *", async () => {
+  try {
+    await ensureMongoConnected();
+    await reconcileSubscriptions({ scope: "due" });
+  } catch (err) {
+    console.error("Error in subscription expiry cron job:", err);
+  }
+});
+// Every 6 hours: every buyer, which is how a renewal of a pack bought before
+// renewals were honoured is noticed without a webhook.
+cron.schedule("40 */6 * * *", async () => {
+  try {
+    await ensureMongoConnected();
+    await reconcileSubscriptions({ scope: "all" });
+  } catch (err) {
+    console.error("Error in subscription renewal cron job:", err);
   }
 });
 
