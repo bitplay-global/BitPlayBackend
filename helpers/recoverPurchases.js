@@ -10,7 +10,9 @@
  *
  * The app never calls Purchases.logIn, so RevenueCat knows each buyer only by
  * an anonymous id ($RCAnonymousID:...), not by BitPlay user id. Recovery
- * therefore works on pairs {userId, rcId}. matchRefusals() builds them: nginx
+ * therefore works on pairs {userId, rcId}. matchRefusals() builds them. First
+ * choice: the Store screen tags each buyer with a `bitplay_user_id` attribute
+ * just before paying, so RevenueCat itself names the account. Otherwise nginx
  * logs every refused POST /api/purchases/<userId> with its time, RevenueCat has
  * every purchase with its time, and a refusal follows its purchase by seconds.
  *
@@ -78,12 +80,20 @@ export function parseNginxRefusals(text) {
 const MATCH_BEFORE_MS = 60 * 1000;      // clock skew between RevenueCat and nginx
 const MATCH_AFTER_MS = 10 * 60 * 1000;  // slow networks, app backgrounded mid-sync
 
+/** The BitPlay user id the app tagged this RevenueCat customer with, if any. */
+export function taggedUserId(subscriber) {
+  const v = subscriber?.subscriber_attributes?.bitplay_user_id?.value;
+  return typeof v === 'string' && /^[0-9a-f]{24}$/i.test(v) ? v.toLowerCase() : null;
+}
+
 /**
- * Pairs RevenueCat customers with BitPlay users by time: each of the customer's
- * purchases since `since` is matched to refused calls that came just after it.
- * A customer is paired only when every match points to one single user.
+ * Pairs RevenueCat customers with BitPlay users. A customer tagged with
+ * bitplay_user_id is paired with that account. Otherwise by time: each of the
+ * customer's purchases since `since` is matched to refused calls that came
+ * just after it, and a customer is paired only when every match points to one
+ * single user.
  */
-export async function matchRefusals({ refusals, rcIds, since }) {
+export async function matchRefusals({ refusals = [], rcIds, since }) {
   const sinceDate = new Date(since);
   const pairs = [];
   const problems = [];
@@ -108,10 +118,16 @@ export async function matchRefusals({ refusals, rcIds, since }) {
         if (d >= -MATCH_BEFORE_MS && d <= MATCH_AFTER_MS) users.add(r.userId);
       }
     }
+    const tagged = taggedUserId(subscriber);
     if (recent === 0) problems.push({ rcId, reason: 'no purchases since --since', bought });
-    else if (users.size === 0) problems.push({ rcId, reason: 'no refused purchase call near its purchase time', bought });
+    // The tag is the last account that opened the Store on that install, so a
+    // refused call from a different account near the purchase means a shared
+    // phone: leave it for a human.
+    else if (tagged && users.size && !(users.size === 1 && users.has(tagged))) problems.push({ rcId, reason: `tagged ${tagged} but refused calls came from ${[...users].join(', ')} -- pair by hand with --pair`, bought });
+    else if (tagged) pairs.push({ userId: tagged, rcId, by: 'tag' });
+    else if (users.size === 0) problems.push({ rcId, reason: refusals.length ? 'no bitplay_user_id tag and no refused purchase call near its purchase time' : 'no bitplay_user_id tag (give --nginx-log to match by time, or --pair)', bought });
     else if (users.size > 1) problems.push({ rcId, reason: `ambiguous: refused calls from ${[...users].join(', ')} -- pair by hand with --pair`, bought });
-    else pairs.push({ userId: [...users][0], rcId });
+    else pairs.push({ userId: [...users][0], rcId, by: 'time' });
   }
   return { pairs, problems };
 }

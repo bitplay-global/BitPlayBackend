@@ -146,6 +146,20 @@ check('refusal hours away: not paired', m.pairs.length === 0 && /no refused purc
 check('unpaired customer shows what they bought', /bitplay\.mini:offer-100 @ 2026-09-15 10:00 UTC/.test(m.problems[0]?.bought?.[0] || ''), JSON.stringify(m.problems[0]));
 m = await matchRefusals({ refusals, rcIds: ['$RCAnonymousID:unknown'], since: SINCE });
 check('unknown RevenueCat id: reported, not paired', m.pairs.length === 0 && /RevenueCat/.test(m.problems[0]?.reason));
+// Webhook failed and the app never reported it: RevenueCat's bitplay_user_id tag names the buyer.
+const tagged = uid();
+RC.set(rcOf(tagged), { subscriptions: { 'bitplay.mini': sub('GPA.TAG', '2026-10-25T07:06:00Z') }, subscriber_attributes: { bitplay_user_id: { value: tagged } } });
+m = await matchRefusals({ rcIds: [rcOf(tagged)], since: SINCE });
+check('tagged customer paired with no nginx log', m.pairs.length === 1 && m.pairs[0].userId === tagged && m.pairs[0].by === 'tag', JSON.stringify(m));
+m = await matchRefusals({ refusals: [{ userId: other, at: new Date('2026-10-25T07:06:30Z'), status: 400 }], rcIds: [rcOf(tagged)], since: SINCE });
+check('tag disagrees with a refused call (shared phone): not paired', m.pairs.length === 0 && /pair by hand/.test(m.problems[0]?.reason), JSON.stringify(m));
+m = await matchRefusals({ refusals: [{ userId: tagged, at: new Date('2026-10-25T07:06:30Z'), status: 400 }], rcIds: [rcOf(tagged)], since: SINCE });
+check('tag and refused call agree: paired', m.pairs.length === 1 && m.pairs[0].userId === tagged, JSON.stringify(m));
+RC.set('$RCAnonymousID:badtag', { subscriptions: { 'bitplay.mini': sub('GPA.BAD', '2026-10-25T07:06:00Z') }, subscriber_attributes: { bitplay_user_id: { value: 'not-an-id' } } });
+m = await matchRefusals({ rcIds: ['$RCAnonymousID:badtag'], since: SINCE });
+check('malformed tag ignored: not paired', m.pairs.length === 0 && /no bitplay_user_id tag/.test(m.problems[0]?.reason), JSON.stringify(m));
+rows = await findRecoverable({ pairs: [{ userId: tagged, rcId: rcOf(tagged) }], since: SINCE });
+check('tagged purchase found as apply', statusOf(rows, tagged)[0] === 'apply', JSON.stringify(statusOf(rows, tagged)));
 
 console.log('\n--- inputs ---');
 const pasted = `Customer  $RCAnonymousID:0f1e2d3c4b5a69788796a5b4c3d2e1f0  Sep 15\n  $RCAnonymousID:abc123  again $RCAnonymousID:abc123`;

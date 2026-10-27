@@ -12,6 +12,11 @@
  *                their App User IDs from the RevenueCat dashboard, one per line
  *   nginx logs   every refused POST /api/purchases/<userId>, with its time
  *
+ * Buyers the Store screen tagged with bitplay_user_id are paired from
+ * RevenueCat alone, so the nginx log is optional:
+ *
+ *    node scripts/recover-purchases.js --since 2026-09-14 --rc-ids rc-ids.txt
+ *
  * 1. Dry run (the default) -- shows the pairing and what would be applied:
  *
  *    node scripts/recover-purchases.js --since 2026-09-14 --rc-ids rc-ids.txt --nginx-log refused.log
@@ -76,8 +81,8 @@ async function main() {
     throw new Error('--since YYYY-MM-DD is required: only purchases from that date on are considered. Use the day the refusals began (2026-09-14).');
   }
   const explicit = args.pairs.map(parsePair);
-  if (!explicit.length && !(args.rcIdFiles.length && args.nginxLogs.length)) {
-    throw new Error('Give --rc-ids <file> with --nginx-log <file> (automatic matching), and/or --pair <userId>=<revenueCatId>.');
+  if (!explicit.length && !args.rcIdFiles.length) {
+    throw new Error('Give --rc-ids <file> (optionally with --nginx-log <file>), and/or --pair <userId>=<revenueCatId>.');
   }
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not set (.env next to server.js).');
   if (!process.env.REVENUECAT_SECRET_KEY) throw new Error('REVENUECAT_SECRET_KEY is not set (.env next to server.js).');
@@ -91,7 +96,7 @@ async function main() {
     const refusals = args.nginxLogs.flatMap(f => parseNginxRefusals(fs.readFileSync(f, 'utf8')));
     console.log(`\nMatching ${rcIds.length} RevenueCat customer(s) against ${refusals.length} refused purchase call(s)...`);
     const { pairs: matched, problems } = await matchRefusals({ refusals, rcIds, since: args.since });
-    for (const p of matched) console.log(`  paired   ${p.rcId}  ->  user ${p.userId}`);
+    for (const p of matched) console.log(`  paired   ${p.rcId}  ->  user ${p.userId}  (by ${p.by})`);
     for (const p of problems) {
       console.log(`  unpaired ${p.rcId}: ${p.reason}`);
       for (const b of p.bought || []) console.log(`             bought ${b}`);
