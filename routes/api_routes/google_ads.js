@@ -58,7 +58,14 @@ router.get('/ids', async (req, res) => {
 
     // console.log("GoogleAds - Ads: ", ads);
 
-    res.status(200).json({ success: true, ads });
+    // Free retries after a lost mini-game round before the app asks for a
+    // video (app: services/gameRetryCredits.ts, default 2). Omitted unless set,
+    // so the app's own default applies.
+    const freeRetries = Number(process.env.GAME_FREE_RETRIES);
+    const extra = Number.isInteger(freeRetries) && freeRetries >= 0 && freeRetries <= 10
+      ? { gameFreeRetries: freeRetries } : {};
+
+    res.status(200).json({ success: true, ads, ...extra });
   } catch (err) {
     console.error('Error fetching Google Ads IDs:', err);
     res.status(500).json({ success: false, message: 'Server Error' });
