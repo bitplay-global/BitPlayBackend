@@ -56,11 +56,11 @@ export async function gameStreak(userId, today) {
  * completes day 3, 5 or 7 of the cycle. Never throws: a logging problem must
  * not undo a reward the user already has.
  */
-export async function recordGameReward({ userId, gh, day, source = 'game', now = new Date() }) {
+export async function recordGameReward({ userId, gh, day, source = 'game', game = '', now = new Date() }) {
   if (!(gh > 0) || !userId || !day) return null;
   try {
     const firstToday = !(await GameRewardLog.exists({ user: String(userId), day }));
-    await GameRewardLog.create({ user: String(userId), gh, day, source, at: now });
+    await GameRewardLog.create({ user: String(userId), gh, day, source, game: String(game || '').trim().slice(0, 40), at: now });
     if (!firstToday) return null;
     const s = await gameStreak(userId, day);
     const bonus = GAME_STREAK_BONUS[s.cycleDay];
@@ -96,6 +96,26 @@ export function displayName(user) {
     if (first) return last ? `${first} ${last.toUpperCase()}.` : first;
   }
   return `Player ${String(user?._id || '').slice(-4)}`;
+}
+
+let popularCache = { at: 0, key: '', rows: [] };
+
+/**
+ * Most-played games: game wins claimed per game over the last `days` days.
+ * Shaped for the app's Game Zone and Home ({ gameName, totalSessions }).
+ * Wins stand in for plays because a lost round is never reported.
+ */
+export async function popularGames({ limit = 30, days = 30, now = new Date() } = {}) {
+  const key = `${limit}:${days}`;
+  if (popularCache.key === key && now - popularCache.at < 10 * 60 * 1000) return popularCache.rows;
+  const rows = (await GameRewardLog.aggregate([
+    { $match: { at: { $gte: new Date(now.getTime() - days * DAY_MS) }, game: { $nin: ['', null] } } },
+    { $group: { _id: '$game', totalSessions: { $sum: 1 }, players: { $addToSet: '$user' } } },
+    { $sort: { totalSessions: -1 } },
+    { $limit: limit },
+  ])).map(r => ({ gameName: r._id, totalSessions: r.totalSessions, players: r.players.length }));
+  popularCache = { at: now.getTime(), key, rows };
+  return rows;
 }
 
 let cache = { at: 0, week: 0, rows: [] };

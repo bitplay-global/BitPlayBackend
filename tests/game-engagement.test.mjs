@@ -71,5 +71,15 @@ const me = await E.myWeek(c, now);
 check('own rank and GH/s', me.rank === 3 && me.gh === 20, JSON.stringify(me));
 check('no wins: no rank', (await E.myWeek(String(new mongoose.Types.ObjectId()), now)).rank === null);
 
+console.log('\n--- most played ---');
+await Log.deleteMany({});
+const add = (game, n, at = now) => Log.insertMany(Array.from({ length: n }, (_, i) => ({ user: `u${i % 3}`, gh: 5, day: '2026-10-30', game, at })));
+await add('Lucky Dice', 5); await add('BTC Trading', 9); await add('Spin & Win', 2);
+await add('Slot Machine', 50, new Date('2026-08-01T00:00:00Z')); // older than 30 days
+await Log.create({ user: 'x', gh: 5, day: '2026-10-30', at: now }); // no game name (old app)
+const pop = await E.popularGames({ limit: 3, now });
+check('most played, last 30 days, by wins', pop.map(p => p.gameName).join('|') === 'BTC Trading|Lucky Dice|Spin & Win' && pop[0].totalSessions === 9, JSON.stringify(pop));
+check('unlabelled rows ignored, players counted', !pop.some(p => !p.gameName) && pop[0].players === 3);
+
 console.log(`\n=== ${pass} passed, ${fail} failed ===`);
 await mongoose.disconnect(); await mongod.stop(); process.exit(fail ? 1 : 0);

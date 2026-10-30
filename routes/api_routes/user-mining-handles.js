@@ -690,7 +690,7 @@ router.post("/", async (req, res) => {
     // request shape) do not count.
     let gameStreakBonus = null;
     if (grant?.kind === "game" && grant.granted > 0 && typeof req.body.game === "string" && req.body.game.trim()) {
-      gameStreakBonus = await recordGameReward({ userId: user_id, gh: grant.granted, day: todayStr, source: "game" });
+      gameStreakBonus = await recordGameReward({ userId: user_id, gh: grant.granted, day: todayStr, source: "game", game: req.body.game });
     }
 
     res.json({
@@ -805,7 +805,7 @@ router.post('/trading-claim', async (req, res) => {
     }
     mining.stockGameBonus = (mining.stockGameBonus || 0) + reward;
     await mining.save();
-    const gameStreakBonus = await recordGameReward({ userId: user_id, gh: reward, day: today, source: 'trading' });
+    const gameStreakBonus = await recordGameReward({ userId: user_id, gh: reward, day: today, source: 'trading', game: 'BTC Trading' });
     return res.json({
       success: true,
       ...(gameStreakBonus ? { game_streak_bonus: gameStreakBonus } : {}),

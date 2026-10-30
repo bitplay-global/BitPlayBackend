@@ -75,6 +75,20 @@ router.get('/btc-price', async (req, res) => {
   }
 });
 
+// Most-played games for the app's Game Zone and Home (helpers/gameEngagement.js).
+// The app has asked for this since the Game Zone shipped; it did not exist.
+router.get('/game-sessions/popular', async (req, res) => {
+  try {
+    const { popularGames } = await import('../helpers/gameEngagement.js');
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 50);
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 90);
+    return res.json({ success: true, popular: await popularGames({ limit, days }) });
+  } catch (error) {
+    console.error('Popular games error:', error.message);
+    return res.status(500).json({ success: false, popular: [] });
+  }
+});
+
 router.get('/app-version-policy', async (req, res) => {
   try {
     const policy = await getVersionPolicy();
