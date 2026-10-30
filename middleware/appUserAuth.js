@@ -54,21 +54,48 @@ const USER_PATH_PATTERNS = [
   "/purchases/:userId",
   "/privileges/:userId",
   "/mining-sessions/status/:userId",
-].map(p => new RegExp("^" + p.replace(/:userId/, "([^/]+)").replace(/:\w+/g, "[^/]+") + "/?$"));
+  "/referrals/rewards/:userId",
+// Case-insensitive, like Express routing: "/USER_MINING/<id>" reaches the same
+// handler, so it must be matched here too.
+].map(p => new RegExp("^" + p.replace(/:userId/, "([^/]+)").replace(/:\w+/g, "[^/]+") + "/?$", "i"));
 
+const ID_FIELDS = ["userId", "user_id"];
+
+/**
+ * Every user id the request claims to act as. Throws "BAD_USER_ID" when a
+ * user-id field holds something that is not a plain string (an array or
+ * object), which a route would otherwise turn into a query of its own.
+ *
+ * userId/user_id values count whatever they look like: a non-ObjectId value
+ * is still a claim, so it can never slip past as "no user named". `user` and
+ * metadata.user_id only count when they are ObjectIds (`user` means other
+ * things in some bodies).
+ */
 function claimedUserIds(req) {
   const ids = new Set();
-  const add = v => { if (typeof v === "string" && OBJECT_ID.test(v)) ids.add(v.toLowerCase()); };
+  const take = (v, strict) => {
+    if (v === undefined || v === null || v === "") return;
+    if (Array.isArray(v)) { v.forEach(x => take(x, strict)); return; }
+    if (typeof v !== "string") throw new Error("BAD_USER_ID");
+    const s = v.trim();
+    if (!s) return;
+    if (!strict || OBJECT_ID.test(s)) ids.add(s.toLowerCase());
+  };
 
-  // req.path is relative to the /api mount.
+  // req.path is relative to the /api mount and still percent-encoded, while
+  // Express hands handlers the decoded param: "%36a8f..." must count as the
+  // id it decodes to.
+  let path = req.path;
+  try { path = decodeURIComponent(req.path); } catch { throw new Error("BAD_USER_ID"); }
   for (const re of USER_PATH_PATTERNS) {
-    const m = re.exec(req.path);
-    if (m) { add(m[1]); break; }
+    const m = re.exec(path);
+    if (m) { take(m[1], false); break; }
   }
   const b = req.body && typeof req.body === "object" ? req.body : {};
-  add(b.userId); add(b.user_id); add(b.user);
-  if (b.metadata && typeof b.metadata === "object") add(b.metadata.user_id);
-  add(req.query?.userId); add(req.query?.user_id);
+  const q = req.query && typeof req.query === "object" ? req.query : {};
+  for (const f of ID_FIELDS) { take(b[f], false); take(q[f], false); }
+  take(typeof b.user === "string" ? b.user : undefined, true);
+  if (b.metadata && typeof b.metadata === "object") take(b.metadata.user_id, true);
   return [...ids];
 }
 
@@ -121,7 +148,12 @@ export async function appUserAuth(req, res, next) {
 
     const header = req.get("authorization") || "";
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    const claimed = claimedUserIds(req);
+    let claimed;
+    try {
+      claimed = claimedUserIds(req);
+    } catch {
+      return deny(res, 400, "BAD_USER_ID", "Invalid user id.");
+    }
 
     if (token) {
       const secret = process.env.JWT_SECRET;
