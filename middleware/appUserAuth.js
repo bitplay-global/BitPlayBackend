@@ -49,6 +49,7 @@ const USER_PATH_PATTERNS = [
   "/user_mining/trading-history/:userId",
   "/user_mining/spin-history/:userId",
   "/user_mining/memory-history/:userId",
+  "/user_mining/game-engagement/:userId",
   "/claim_daily_miner/:userId",
   "/purchases/:userId",
   "/privileges/:userId",

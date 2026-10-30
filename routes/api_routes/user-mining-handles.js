@@ -8,6 +8,7 @@ import {
   trustedDay, isPlausibleDay, isPlausibleOffset, isValidTimeZone, isPlausibleTimestamp, dayFromLocalTime,
 } from "../../helpers/clientTime.js";
 import { computeStreak } from "../../helpers/streak.js";
+import { recordGameReward, gameStreak, weeklyLeaderboard, myWeek } from "../../helpers/gameEngagement.js";
 import {
   decideGrant, applyGameBudget, adCounter, privilegeGhFromRows, DEFAULT_MAX_GAME_GRANT_GH,
 } from "../../helpers/rewardGrants.js";
@@ -684,10 +685,19 @@ router.post("/", async (req, res) => {
 
     console.log("Setting User Data: ", updateData, user_id, "effective_hashpower:", effectiveHp);
 
+    // Game streak and leaderboard (helpers/gameEngagement.js): only granted
+    // rewards the app labels as a game win, so daily-reward claims (same
+    // request shape) do not count.
+    let gameStreakBonus = null;
+    if (grant?.kind === "game" && grant.granted > 0 && typeof req.body.game === "string" && req.body.game.trim()) {
+      gameStreakBonus = await recordGameReward({ userId: user_id, gh: grant.granted, day: todayStr, source: "game" });
+    }
+
     res.json({
       success: true,
       mining_details: responseDetails,
       ad_cap_reached: adCapReached,
+      ...(gameStreakBonus ? { game_streak_bonus: gameStreakBonus } : {}),
       // What the server granted for this request, so a refusal is visible.
       ...(grant ? { grant: { kind: grant.kind, requested: grant.requested, granted: grant.granted, reason: grant.reason } } : {}),
     });
@@ -795,8 +805,10 @@ router.post('/trading-claim', async (req, res) => {
     }
     mining.stockGameBonus = (mining.stockGameBonus || 0) + reward;
     await mining.save();
+    const gameStreakBonus = await recordGameReward({ userId: user_id, gh: reward, day: today, source: 'trading' });
     return res.json({
       success: true,
+      ...(gameStreakBonus ? { game_streak_bonus: gameStreakBonus } : {}),
       message: reward > 0 ? 'Reward claimed' : (trade.won === true ? 'Daily game reward limit reached' : 'No reward for a lost trade'),
       stockGameBonus: mining.stockGameBonus,
       reward,
@@ -808,6 +820,25 @@ router.post('/trading-claim', async (req, res) => {
 });
 
 const WIN_GH_REWARD_SERVER = 10;
+
+// Game Zone: this user's game streak, this week's leaderboard and their rank.
+router.get('/game-engagement/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const mining = await UserMiningDetail.findOne({ user: userId }, { offset: 1, timezone: 1 }).lean();
+    const today = requestDayString({ storedOffset: mining?.offset }, userId);
+    const [streak, board, me] = await Promise.all([gameStreak(userId, today), weeklyLeaderboard(), myWeek(userId)]);
+    return res.json({
+      success: true,
+      streak,
+      leaderboard: { weekStart: board.weekStart, rows: board.rows.map(({ userId: id, ...r }) => ({ ...r, isMe: id === String(userId) })) },
+      me,
+    });
+  } catch (err) {
+    console.error('Error reading game engagement:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 router.get('/spin-history/:userId', async (req, res) => {
   try {
