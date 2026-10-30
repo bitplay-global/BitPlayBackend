@@ -27,6 +27,7 @@ import {
 } from "./helpers/miningDaySettlement.js";
 import { reconcileSubscriptions } from "./helpers/subscriptionGrants.js";
 import { expireBonusGrants } from "./helpers/bonusGrants.js";
+import { sendStreakReminders, sendLeaderboardReminders } from "./helpers/engagementReminders.js";
 
 console.log("Cron Job Started!!");
 
@@ -323,6 +324,28 @@ cron.schedule("25 * * * *", async () => {
     console.error("Error in bonus expiry cron job:", err);
   }
 });
+// Engagement pushes (helpers/engagementReminders.js). Hourly: game streaks at
+// risk, for players whose local time is 20:00. Weekends 15:00 UTC: this
+// week's top 20 on the game leaderboard. Each at most once per user per day.
+cron.schedule("5 * * * *", async () => {
+  try {
+    await ensureMongoConnected();
+    const r = await sendStreakReminders();
+    if (r.sent) console.log(`[Reminders] game streak: sent ${r.sent}`);
+  } catch (err) {
+    console.error("Error in game streak reminder cron job:", err);
+  }
+});
+cron.schedule("0 15 * * 6,0", async () => {
+  try {
+    await ensureMongoConnected();
+    const r = await sendLeaderboardReminders();
+    console.log(`[Reminders] leaderboard: ${r.players} players, sent ${r.sent}`);
+  } catch (err) {
+    console.error("Error in leaderboard reminder cron job:", err);
+  }
+});
+
 // Every 6 hours: every buyer, which is how a renewal of a pack bought before
 // renewals were honoured is noticed without a webhook.
 cron.schedule("40 */6 * * *", async () => {
