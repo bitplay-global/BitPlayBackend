@@ -28,6 +28,19 @@ const referralRewardHistorySchema = new mongoose.Schema({
     required: true,
     default: 0
   },
+  // Since 2026-10-30 referrers are rewarded in mining power, not BTC (App
+  // Store 3.1.5(v): no currency for getting others to download). rewardGh is
+  // the bonus GH/s given for 24h; rewardAmount stays 0 on those rows. Older
+  // rows are 'btc' and keep the BTC they paid.
+  rewardType: {
+    type: String,
+    enum: ['btc', 'ghs'],
+    default: 'btc'
+  },
+  rewardGh: {
+    type: Number,
+    default: 0
+  },
   rewardPercentage: {
     type: Number,
     default: 5.0 // 5% default, configurable

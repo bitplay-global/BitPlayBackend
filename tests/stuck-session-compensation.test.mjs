@@ -2,7 +2,7 @@
  * Compensation for mining sessions that were stuck without local_start_time.
  * Verifies: only days between the stuck start and the reset that the user
  * actually opened the app are paid, at hashpower x rate x 24h; each day is
- * paid once (balance, history row, referrer's 5%); re-running pays nothing;
+ * paid once (balance, history row, referrer's 5% as bonus GH/s); re-running pays nothing;
  * still-stuck sessions are not paid yet; streaks are raised, never lowered.
  */
 import fs from 'fs';
@@ -44,6 +44,8 @@ await users.insertMany([
 ]);
 for (const u of [parent, rishabh, steady, stillStuck, partlyPaid]) await Balance.create({ user: String(u), BTC_DEPOSIT: 0 });
 const R = String(rishabh), S = String(steady), X = String(stillStuck), P = String(partlyPaid);
+// The referrer needs a mining record: referral rewards are bonus GH/s now.
+await mkMining(String(parent), { mining_isactive: false, start_time: 0, hashpower: 0 });
 
 console.log('\n--- snapshot records sessions that are stuck right now ---');
 await mkMining(R, { mining_isactive: true, start_time: 1789307714440, local_start_time: null, hashpower: 805, streakDays: 2, streakLastDate: '2026-09-20' });
@@ -100,7 +102,8 @@ const rR = results.find(r => r.user === R);
 check('Rishabh paid 6 days', rR.paidDays.length === 6 && rR.errors.length === 0, JSON.stringify(rR));
 check('balance increased by exactly 6 days', Math.abs((await dep(R)) - 6 * PER_DAY) < 1e-15, `${await dep(R)}`);
 check('one history row per paid day', (await History.countDocuments({ user: R })) === 6);
-check('referrer got 5% of each day', Math.abs((await dep(String(parent))) - 0.05 * 6 * PER_DAY) < 1e-15 && (await Referral.countDocuments({ childUserId: R })) === 6, `${await dep(String(parent))}`);
+const parentHp = (await Mining.findOne({ user: String(parent) }).lean())?.purchasedHashpower;
+check('referrer got 5% of each day as bonus GH/s, no BTC', Math.abs(parentHp - 6 * 0.05 * 805) < 0.06 && (await dep(String(parent))) === 0 && (await Referral.countDocuments({ childUserId: R, rewardType: 'ghs' })) === 6, `hp ${parentHp}, btc ${await dep(String(parent))}`);
 const mR = await Mining.findOne({ user: R }).lean();
 check('streak raised to 3, last day 21 Sep', mR.streakDays === 3 && mR.streakLastDate === '2026-09-21');
 const rP = results.find(r => r.user === P);

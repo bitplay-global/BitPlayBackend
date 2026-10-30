@@ -1,11 +1,68 @@
 import mongoose from "mongoose";
-import Balance from "../models/Balance.js";
 import BalanceHistory from "../models/BalanceHistory.js";
 import ReferralRewardHistory from "../models/ReferralRewardHistory.js";
 import { escapeRegex } from "../helpers/escapeRegex.js";
+import { grantBonus } from "../helpers/bonusGrants.js";
+import { BTC_PER_GH_PER_DAY } from "../helpers/miningDaySettlement.js";
 
 // Referral reward percentage (default: 5%)
 const REFERRAL_REWARD_PERCENTAGE = parseFloat(process.env.REFERRAL_REWARD_PERCENTAGE || "5.0");
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The referrer's reward for one of their referral's settled days: bonus mining
+ * power for the next 24 hours, worth REFERRAL_REWARD_PERCENTAGE of what the
+ * referral mined that day if the referrer mines through it.
+ *
+ * Until 2026-10-30 this was paid as BTC into BTC_DEPOSIT. App Store guideline
+ * 3.1.5(v) bars crypto apps from paying currency for getting others to
+ * download, so the reward is now mining power (models/BonusGrant.js, removed
+ * again by the hourly cron when it expires). BTC already paid stays paid.
+ */
+export function referralRewardGh(childDailyMiningBtc) {
+  const gh = (childDailyMiningBtc * (REFERRAL_REWARD_PERCENTAGE / 100)) / BTC_PER_GH_PER_DAY;
+  return Math.round(gh * 100) / 100;
+}
+
+const dayKey = d => new Date(d).toISOString().slice(0, 10);
+
+/**
+ * Grants the bonus and records it. The bonus key and the history row are both
+ * unique per (child, day), so a repeat never grants twice.
+ * @returns {Promise<{rewardGh:number, granted:boolean}>}
+ */
+async function grantReferralReward({ parentUserId, childUserId, rewardDate, childDailyMining, now = new Date() }) {
+  const rewardGh = referralRewardGh(childDailyMining);
+  let granted = false;
+  if (rewardGh > 0) {
+    const r = await grantBonus({
+      key: `referral:${childUserId}:${dayKey(rewardDate)}`,
+      userId: parentUserId,
+      hashpower: rewardGh,
+      expiresAt: new Date(now.getTime() + DAY_MS),
+      reason: `referral reward: ${REFERRAL_REWARD_PERCENTAGE}% of ${childUserId}'s mining on ${dayKey(rewardDate)}`,
+      now,
+    });
+    granted = r === 'granted';
+  }
+  try {
+    await ReferralRewardHistory.create({
+      parentUserId,
+      childUserId,
+      rewardDate,
+      childDailyMining: mongoose.Types.Decimal128.fromString(childDailyMining.toFixed(16)),
+      rewardAmount: mongoose.Types.Decimal128.fromString("0"),
+      rewardType: 'ghs',
+      rewardGh,
+      rewardPercentage: REFERRAL_REWARD_PERCENTAGE,
+      status: 'processed'
+    });
+  } catch (err) {
+    if (err?.code !== 11000) throw err; // already recorded
+  }
+  return { rewardGh, granted };
+}
 
 /**
  * Helper function to check if referralUsed value is valid (not null, 'null', or empty)
@@ -165,7 +222,7 @@ async function calculateDailyReferralRewards() {
 /**
  * Process referral rewards for all unprocessed BalanceHistory records
  * - Checks for duplicate processing
- * - Updates parent's BTC_DEPOSIT balance
+ * - Gives the parent 24h of bonus mining power (grantReferralReward)
  * - Creates ReferralRewardHistory records
  * This handles users across all timezones by processing each record once
  */
@@ -199,44 +256,12 @@ async function processReferralRewards() {
           continue;
         }
 
-        // Get parent's balance
-        const parentBalance = await Balance.findOne({ user: reward.parentUserId });
-
-        if (!parentBalance) {
-          console.error(`[Referral Rewards] Parent balance not found for user ${reward.parentUserId}`);
-          errorCount++;
-          continue;
-        }
-
-        // Convert reward amount to Decimal128 format
-        // 16 dp, matching processReferralRewardForChild. At 8 dp this path
-        // silently truncated small rewards to zero, so the same reward was worth
-        // a different amount depending on which path happened to credit it.
-        const rewardAmountDecimal = mongoose.Types.Decimal128.fromString(reward.rewardAmount.toFixed(16));
-        const childDailyMiningDecimal = mongoose.Types.Decimal128.fromString(reward.childDailyMining.toFixed(16));
-
-        // Update parent's BTC_DEPOSIT balance
-        const currentBTC_DEPOSIT = parseFloat(parentBalance.BTC_DEPOSIT?.toString() || "0");
-        const newBTC_DEPOSIT = currentBTC_DEPOSIT + reward.rewardAmount;
-        parentBalance.BTC_DEPOSIT = mongoose.Types.Decimal128.fromString(newBTC_DEPOSIT.toFixed(16));
-        await parentBalance.save();
-
-        // Create ReferralRewardHistory record
-        // Use the exact date from BalanceHistory (user's local timezone date)
-        await ReferralRewardHistory.create({
-          parentUserId: reward.parentUserId,
-          childUserId: reward.childUserId,
-          rewardDate: reward.rewardDate,
-          childDailyMining: childDailyMiningDecimal,
-          rewardAmount: rewardAmountDecimal,
-          rewardPercentage: reward.rewardPercentage,
-          status: 'processed'
-        });
+        const { rewardGh } = await grantReferralReward(reward);
 
         processedCount++;
-        totalRewardAmount += reward.rewardAmount;
+        totalRewardAmount += rewardGh;
 
-        console.log(`[Referral Rewards] Processed reward: parent ${reward.parentUserId} received ${reward.rewardAmount.toFixed(8)} BTC from child ${reward.childUserId}`);
+        console.log(`[Referral Rewards] Processed reward: parent ${reward.parentUserId} gets ${rewardGh} GH/s for 24h from child ${reward.childUserId}`);
 
       } catch (error) {
         console.error(`[Referral Rewards] Error processing reward for parent ${reward.parentUserId}, child ${reward.childUserId}:`, error);
@@ -249,7 +274,9 @@ async function processReferralRewards() {
             childUserId: reward.childUserId,
             rewardDate: reward.rewardDate,
             childDailyMining: mongoose.Types.Decimal128.fromString(reward.childDailyMining.toFixed(8)),
-            rewardAmount: mongoose.Types.Decimal128.fromString(reward.rewardAmount.toFixed(8)),
+            rewardAmount: mongoose.Types.Decimal128.fromString("0"),
+            rewardType: 'ghs',
+            rewardGh: referralRewardGh(reward.childDailyMining),
             rewardPercentage: reward.rewardPercentage,
             status: 'failed',
             notes: error.message
@@ -267,7 +294,7 @@ async function processReferralRewards() {
       processedCount,
       skippedCount,
       errorCount,
-      totalRewardAmount: totalRewardAmount.toFixed(8),
+      totalRewardGh: totalRewardAmount.toFixed(2),
       processingTimeSeconds: processingTime
     };
 
@@ -341,52 +368,15 @@ async function processReferralRewardForChild(childUserId, childDailyMining, rewa
       return { alreadyProcessed: true };
     }
 
-    // Calculate reward (5% of child's daily mining)
-    const rewardAmount = childDailyMining * (REFERRAL_REWARD_PERCENTAGE / 100);
+    const { rewardGh } = await grantReferralReward({ parentUserId, childUserId, rewardDate, childDailyMining });
 
-    console.log(`[Referral Rewards] Calculated reward: ${rewardAmount} BTC (5% of ${childDailyMining} BTC)`);
-
-    // Get parent's balance
-    const parentBalance = await Balance.findOne({ user: parentUserId });
-
-    if (!parentBalance) {
-      console.error(`[Referral Rewards] Parent balance not found for user ${parentUserId}`);
-      throw new Error(`Parent balance not found for user ${parentUserId}`);
-    }
-
-    // Convert reward amount to Decimal128 format
-    // Use more precision (16 decimal places) to handle very small amounts
-    // BTC can have up to 8 decimal places, but we store with more precision internally
-    const rewardAmountDecimal = mongoose.Types.Decimal128.fromString(rewardAmount.toFixed(16));
-    const childDailyMiningDecimal = mongoose.Types.Decimal128.fromString(childDailyMining.toFixed(16));
-
-    // Update parent's BTC_DEPOSIT balance
-    const currentBTC_DEPOSIT = parseFloat(parentBalance.BTC_DEPOSIT?.toString() || "0");
-    const newBTC_DEPOSIT = currentBTC_DEPOSIT + rewardAmount;
-    // Store with 16 decimal places internally, but it will be displayed with 8 decimal places in the UI
-    parentBalance.BTC_DEPOSIT = mongoose.Types.Decimal128.fromString(newBTC_DEPOSIT.toFixed(16));
-    await parentBalance.save();
-    
-    console.log(`[Referral Rewards] Updated parent balance: ${currentBTC_DEPOSIT} → ${newBTC_DEPOSIT} BTC (+${rewardAmount} BTC)`);
-
-    // Create ReferralRewardHistory record
-    await ReferralRewardHistory.create({
-      parentUserId: parentUserId,
-      childUserId: childUserId,
-      rewardDate: rewardDate,
-      childDailyMining: childDailyMiningDecimal,
-      rewardAmount: rewardAmountDecimal,
-      rewardPercentage: REFERRAL_REWARD_PERCENTAGE,
-      status: 'processed'
-    });
-
-    console.log(`[Referral Rewards] ✅ Processed reward: parent ${parentUserId} received ${rewardAmount} BTC (${rewardAmount.toFixed(8)} BTC rounded) from child ${childUserId}`);
+    console.log(`[Referral Rewards] ✅ Processed reward: parent ${parentUserId} gets ${rewardGh} GH/s for 24h from child ${childUserId}`);
 
     return {
       success: true,
       parentUserId,
       childUserId,
-      rewardAmount,
+      rewardGh,
       rewardDate
     };
   } catch (error) {
@@ -403,13 +393,14 @@ async function processReferralRewardForChild(childUserId, childDailyMining, rewa
           if (childUser) {
             const parentUserId = await getParentUserId(childUserId, childUser.referralUsed);
             if (parentUserId) {
-              const failedRewardAmount = childDailyMining * (REFERRAL_REWARD_PERCENTAGE / 100);
               await ReferralRewardHistory.create({
                 parentUserId: parentUserId,
                 childUserId: childUserId,
                 rewardDate: rewardDate,
                 childDailyMining: mongoose.Types.Decimal128.fromString(childDailyMining.toFixed(16)),
-                rewardAmount: mongoose.Types.Decimal128.fromString(failedRewardAmount.toFixed(16)),
+                rewardAmount: mongoose.Types.Decimal128.fromString("0"),
+                rewardType: 'ghs',
+                rewardGh: referralRewardGh(childDailyMining),
                 rewardPercentage: REFERRAL_REWARD_PERCENTAGE,
                 status: 'failed',
                 notes: error.message

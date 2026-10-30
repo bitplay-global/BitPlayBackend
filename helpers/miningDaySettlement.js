@@ -5,6 +5,8 @@
 
 const MAX_MINING_DURATION_MS = 24 * 60 * 60 * 1000;
 const BTC_PER_HASHPOWER_PER_SEC = 0.000000000000007;
+/** BTC one GH/s earns over a full mining day. */
+export const BTC_PER_GH_PER_DAY = BTC_PER_HASHPOWER_PER_SEC * 24 * 60 * 60;
 
 /**
  * Current date (YYYY-MM-DD) in a user's timezone; falls back to offset if IANA is missing.

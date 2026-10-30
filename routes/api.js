@@ -252,7 +252,16 @@ router.get("/referrals/rewards/:userId", async (req, res) => {
     // Calculate total reward amount
     // Use high precision to handle very small amounts
     let totalRewards = 0;
+    // Since 2026-10-30 rewards are bonus mining power (rewardType 'ghs');
+    // older BTC rewards stay in totalRewards.
+    let totalRewardGh = 0;
+    let activeRewardGh = 0;
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
     rewards.forEach(reward => {
+      if (reward.rewardType === 'ghs') {
+        totalRewardGh += reward.rewardGh || 0;
+        if (new Date(reward.createdAt).getTime() > dayAgo) activeRewardGh += reward.rewardGh || 0;
+      }
       // Decimal128 values need to be converted properly
       const amountStr = reward.rewardAmount?.toString() || "0";
       const amount = parseFloat(amountStr);
@@ -275,12 +284,16 @@ router.get("/referrals/rewards/:userId", async (req, res) => {
       success: true,
       totalRewards: formattedTotal,
       totalRewardsRaw: totalRewards, // Also include raw value for precision
+      totalRewardGh: Math.round(totalRewardGh * 100) / 100,
+      activeRewardGh: Math.round(activeRewardGh * 100) / 100,
       rewardsCount: rewards.length,
       rewards: rewards.map(r => ({
         childUserId: r.childUserId,
         rewardDate: r.rewardDate,
         childDailyMining: r.childDailyMining?.toString() || "0",
         rewardAmount: r.rewardAmount?.toString() || "0",
+        rewardType: r.rewardType || 'btc',
+        rewardGh: r.rewardGh || 0,
         status: r.status
       }))
     });
