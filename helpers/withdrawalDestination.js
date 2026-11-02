@@ -28,8 +28,13 @@ export function isValidLightningAddress(address) {
   return LIGHTNING_ADDRESS.test(normalizeLightningAddress(address));
 }
 
+// Speed hands out Lightning addresses that themselves begin with "lnbc"
+// (lnbc1p...@speed.app), so the prefix alone called them invoices and approval
+// refused them as unreadable. A valid address is never an invoice; an invoice
+// with "@speed.app" glued on is far too long to be a valid address, so it still
+// counts as a (broken) invoice.
 export function isInvoiceDestination(stored) {
-  return typeof stored === "string" && /^ln(bc|tb|bcrt)/i.test(stored.trim());
+  return typeof stored === "string" && !isValidLightningAddress(stored) && /^ln(bc|tb|bcrt)/i.test(stored.trim());
 }
 
 const fmtUtc = (unix) => new Date(unix * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC";
@@ -44,7 +49,7 @@ const fmtUtc = (unix) => new Date(unix * 1000).toISOString().slice(0, 16).replac
  *         | { ok:false, error:string }}
  */
 export function checkDestination(input, { expectedSats, now = Math.floor(Date.now() / 1000) } = {}) {
-  if (looksLikeInvoice(input)) {
+  if (looksLikeInvoice(input) && !isValidLightningAddress(input)) {
     const inv = decodeInvoice(input);
     if (!inv) {
       return { ok: false, error: "That Lightning invoice isn't valid. Copy it again from your wallet, without adding anything to it, or use your Lightning address (e.g. yourname@speed.app)." };
