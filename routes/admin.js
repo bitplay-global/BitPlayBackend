@@ -25,6 +25,7 @@ import { sendCustomNotification, sendBulkNotifications } from '../services/notif
 import AdMultiplierPrivilege from '../models/AdMultiplierPrivilege.js';
 import { assessWithdrawals } from '../helpers/withdrawalRisk.js';
 import { invoiceExpiry } from '../helpers/withdrawalDestination.js';
+import { assessUserCountry, restrictedCountries } from '../helpers/userCountry.js';
 import { escapeRegex } from "../helpers/escapeRegex.js";
 import { safeAdminNext, ADMIN_HOME } from '../helpers/adminRedirect.js';
 
@@ -1267,13 +1268,21 @@ router.get("/withdrawals", requireAuth, async (req, res) => {
     });
     const userDocs = await usersCollection
       .find({ _id: { $in: userIdsForQuery } })
-      .project({ _id: 1, name: 1, email: 1 })
+      .project({ _id: 1, name: 1, email: 1, country: 1 })
       .toArray();
     const userMap = {};
     userDocs.forEach((u) => {
       const key = u._id instanceof mongoose.Types.ObjectId ? u._id.toString() : String(u._id);
-      userMap[key] = { name: u.name || "-", email: u.email || "-" };
+      userMap[key] = { name: u.name || "-", email: u.email || "-", country: u.country || null };
     });
+
+    // Country per user, from the phone's time zone and the profile
+    // (helpers/userCountry.js), with a flag for restricted countries.
+    const tzDocs = await mongoose.connection.collection("userminings")
+      .find({ user: { $in: userIds.map(String) } }, { projection: { user: 1, timezone: 1 } })
+      .toArray();
+    const tzMap = new Map(tzDocs.map((d) => [String(d.user), d.timezone || null]));
+    const restrictedSet = restrictedCountries();
 
     // Pull each involved user's CURRENT real balance so it can be shown
     // next to their withdrawal request — lets an admin spot at a glance
@@ -1360,6 +1369,7 @@ router.get("/withdrawals", requireAuth, async (req, res) => {
         userBalanceDepositBtc: userBalance != null ? userBalance.deposit.toFixed(16) : null,
         exceedsBalance,
         risk: risk.get(String(w._id)) || null,
+        country: assessUserCountry({ timezone: tzMap.get(String(w.userId)), profileCountry: userMap[w.userId]?.country }, restrictedSet),
         // Unix seconds when an invoice destination expires; null for an address.
         invoiceExpiresAt: invoiceExpiry(w.toAddress)
       };
