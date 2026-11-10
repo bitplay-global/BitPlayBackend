@@ -41,6 +41,7 @@
             <th>#</th>
             <th>Name</th>
             <th>Email</th>
+            <th>Country</th>
             <th>Asset</th>
             <th>Chain</th>
             <th>To Address</th>
@@ -67,12 +68,28 @@
               const invExp = w.invoiceExpiresAt ? new Date(w.invoiceExpiresAt * 1000) : null;
               const invExpired = invExp && invExp.getTime() <= Date.now() + 60000;
               const invExpText = invExp ? invExp.toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '';
+              const ctry = w.country || {};
+              if (ctry.restricted) warnings.push('RESTRICTED COUNTRY: ' + ctry.restrictedBy.join('; ') + '. Check whether this user may be paid before approving.');
               if (invExpired && w.status === 'PENDING') warnings.push('The invoice expired at ' + invExpText + ' and can no longer be paid: reject this request.');
             %>
             <tr data-id="<%= w._id %>" data-warnings="<%= warnings.join(' ') %>">
               <td><%= (page - 1) * limit + index + 1 %></td>
               <td><%= w.userName || '-' %></td>
               <td><%= w.userEmail || '-' %></td>
+              <td class="small text-nowrap">
+                <%# Country from the phone's time zone and the profile (helpers/userCountry.js). Signals, not proof of location. %>
+                <% if (ctry.tzCountry) { %>
+                  <span title="From the phone's time zone: <%= ctry.timezone %>"><%= ctry.tzCountry.name %></span>
+                <% } else { %>
+                  <span class="text-muted" title="No time zone recorded">-</span>
+                <% } %>
+                <% if (ctry.profileCountry && (!ctry.tzCountry || ctry.profileCountry.code !== ctry.tzCountry.code)) { %>
+                  <br><span class="text-muted" title="Country typed in the user's profile">Profile: <%= ctry.profileCountry.name %></span>
+                <% } %>
+                <% if (ctry.restricted) { %>
+                  <br><span class="badge bg-danger" title="<%= ctry.restrictedBy.join('; ') %> -- on the restricted list (RESTRICTED_COUNTRIES). Payments to this country may be prohibited; check before approving.">&#9940; RESTRICTED COUNTRY</span>
+                <% } %>
+              </td>
               <td><%= w.asset %></td>
               <td><%= w.chain %></td>
               <td class="text-nowrap">
@@ -101,7 +118,7 @@
               <td class="small" style="min-width: 220px;">
                 <% if (!w.risk) { %>
                   <span class="text-muted">-</span>
-                <% } else if (!unx && !shared) { %>
+                <% } else if (!unx && !shared && !ctry.restricted) { %>
                   <span class="text-success">&#10003; No warnings</span>
                 <% } %>
                 <% if (unx) { %>
